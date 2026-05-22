@@ -1,9 +1,9 @@
 package admin
 
 import (
-	"github.com/Blue-Onion/ArtmeisterBackend/handler/art"
-	"github.com/Blue-Onion/ArtmeisterBackend/handler/user"
-	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
+	"github.com/Raj020994/handler/art"
+	"github.com/Raj020994/handler/user"
+	"github.com/Raj020994/middleware"
 	"github.com/go-chi/chi"
 	"net/http"
 )

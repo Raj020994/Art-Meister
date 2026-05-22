@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/Blue-Onion/ArtmeisterBackend/handler"
-	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
-	"github.com/Blue-Onion/ArtmeisterBackend/utlis"
+	"github.com/Raj020994/handler"
+	"github.com/Raj020994/internal/database"
+	"github.com/Raj020994/utlis"
 	"github.com/google/uuid"
 )
 

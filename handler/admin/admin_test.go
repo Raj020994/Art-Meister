@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
+	"github.com/Raj020994/internal/database"
 	"github.com/Blue-Onion/ArtmeisterBackend/model"
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"

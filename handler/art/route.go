@@ -3,9 +3,10 @@ package art
 import (
 	"net/http"
 
-	artmetadata "github.com/Blue-Onion/ArtmeisterBackend/handler/artMetaData"
-	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
+	artmetadata "github.com/Raj020994/handler/artMetaData"
+	"github.com/Raj020994/middleware"
 	"github.com/go-chi/chi"
+
 )
 
 // ArtRouter defines routes for the art package.

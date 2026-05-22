@@ -1,3 +1,5 @@
+github.com/Blue-Onion/ArtmeisterBackend v0.0.0-20260521184403-9e188198840a h1:RVo4TSVGjmec6JeUd78mmV/aO+apAU4pekP1LeYLZTU=
+github.com/Blue-Onion/ArtmeisterBackend v0.0.0-20260521184403-9e188198840a/go.mod h1:1j4j7ZmQoH8oBEfODc/DLY1w7UlnmKO28LvU9OiCU2E=
 github.com/go-chi/chi v1.5.5 h1:vOB/HbEMt9QqBqErz07QehcOKHaWFtuj87tTDVz2qXE=
 github.com/go-chi/chi v1.5.5/go.mod h1:C9JqLr3tIYjDOZpzn+BCuxY8z8vmca43EeMgyZt7irw=
 github.com/go-chi/cors v1.2.2 h1:Jmey33TE+b+rB7fT8MUy1u0I4L+NARQlK6LhzKPSyQE=

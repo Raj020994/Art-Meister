@@ -3,7 +3,7 @@ package user
 import (
 	"net/http"
 
-	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
+	"github.com/Raj020994/middleware"
 	"github.com/go-chi/chi"
 )
 

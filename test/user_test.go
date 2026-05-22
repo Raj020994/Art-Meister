@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Blue-Onion/ArtmeisterBackend/handler/user"
-	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
-	"github.com/Blue-Onion/ArtmeisterBackend/model"
-	"github.com/Blue-Onion/ArtmeisterBackend/utlis"
+	"github.com/Raj020994/handler/user"
+	"github.com/Raj020994/internal/database"
+	"github.com/Raj020994/model"
+	"github.com/Raj020994/utlis"
 	"github.com/google/uuid"
 )
 

@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Blue-Onion/ArtmeisterBackend/handler"
-	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
+	"github.com/Raj020994/internal/database"
 	"github.com/Blue-Onion/ArtmeisterBackend/model"
 	"github.com/Blue-Onion/ArtmeisterBackend/utlis"
 	"github.com/go-chi/chi"

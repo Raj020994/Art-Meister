@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
+	"github.com/Raj020994/internal/database"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )

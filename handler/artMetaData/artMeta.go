@@ -2,11 +2,11 @@ package artmetadata
 
 import (
 	"encoding/json"
-	"github.com/Blue-Onion/ArtmeisterBackend/handler"
-	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
-	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
-	"github.com/Blue-Onion/ArtmeisterBackend/model"
-	"github.com/Blue-Onion/ArtmeisterBackend/utlis"
+	"github.com/Raj020994/handler"
+	"github.com/Raj020994/internal/database"
+	"github.com/Raj020994/middleware"
+	"github.com/Raj020994/model"
+	"github.com/Raj020994/utlis"
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
 	"net/http"
