@@ -1,0 +1,742 @@
+================================================================================
+ DATABASE-TO-API FIELD USAGE ANALYSIS
+ Maps: SQL queries -> Go structs -> JSON responses -> Frontend consumption
+================================================================================
+
+Created: 2026-06-24
+Source files:
+  - sql/queries/*.sql              (SQL query definitions)
+  - internal/database/*.sql.go      (sqlc-generated Go code)
+  - handler/**/*.go                 (Go handler implementations)
+  - report.md                       (Frontend field usage analysis)
+  - sql/schema/*.sql                (Database schema)
+
+================================================================================
+ AUTH ROUTES
+================================================================================
+
+1. POST /auth/login  ->  HandleLogin  ->  GetUserByEmail
+------------------------------------------------------------------------
+SQL query (user.sql:79-96): SELECT id, name, username, email, password,
+  batch, status, role, image, banner_image, description, social_links,
+  created_at, updated_at FROM users WHERE email = $1
+
+Returns struct: GetUserByEmailRow (13 fields)
+
+Go handler serializes a CUSTOM MAP with only 4 fields:
+  { "id", "name", "email", "image" }
+
+Waste: 9 fields fetched from DB but excluded from response:
+  - username, password, batch, status, role, banner_image, description,
+    social_links, created_at, updated_at
+
+Note: password is used for verification but NOT returned in response.
+      The rest (username, batch, status, role, banner_image, description,
+      social_links, created_at, updated_at) are completely unused.
+
+Frontend uses only: Data.id (from the 4-field map)
+  → Could be reduced to just returning { "id" }
+
+------------------------------------------------------------------------
+
+2. POST /auth/users  ->  HandleCreateUser  ->  CreateUser
+------------------------------------------------------------------------
+SQL query (user.sql:1-23): INSERT ... RETURNING id, name, username, email,
+  batch, status, role, image, banner_image, description, social_links,
+  created_at, updated_at
+
+Returns struct: CreateUserRow (12 fields)
+
+All 12 fields returned in JSON.
+
+Frontend uses only: Data.ID (serialized as "ID", no json tag)
+
+Waste: 11 fields:
+  Name, Username, Email, Batch, Status, Role, Image, BannerImage,
+  Description, SocialLinks, CreatedAt, UpdatedAt
+
+Note: inconsistency - POST /login returns lowercase "id", POST /auth/users
+      returns uppercase "ID" (no json tags on sqlc structs)
+
+Optimization: RETURNING id only, or strip to { "ID": ... }
+
+------------------------------------------------------------------------
+
+3. GET /auth/me  ->  HandleMe  ->  GetUser
+------------------------------------------------------------------------
+SQL query (user.sql:26-42): SELECT id, name, username, email, batch, status,
+  role, image, banner_image, description, social_links, created_at, updated_at
+  FROM users WHERE id = $1
+
+Returns struct: GetUserRow (12 fields)
+
+All 12 fields returned in JSON.
+
+Frontend uses (from report):
+  ID, Name, Email, Role, Status, Username (Valid+String),
+  Description (Valid+String), Batch (Valid+String), Image (Valid+String),
+  BannerImage (Valid+String), SocialLinks (instagram, youtube)
+
+Potentially unused: CreatedAt, UpdatedAt
+(Stored in zustand store but no page displays these)
+
+Optimization potential: Low - full user object stored in zustand store,
+  many components consume different parts. Could drop CreatedAt, UpdatedAt.
+
+------------------------------------------------------------------------
+
+4. POST /auth/logout  ->  HandleLogOut
+------------------------------------------------------------------------
+No DB query. Returns custom map { "message": "Logged out successfully" }
+No waste.
+
+------------------------------------------------------------------------
+
+================================================================================
+ USER ROUTES
+================================================================================
+
+5. GET /auth/users  ->  HandleGetAllUser  ->  GetAllUser
+------------------------------------------------------------------------
+SQL query (user.sql:45-60): SELECT id, name, username, email, batch, status,
+  role, image, banner_image, description, social_links, created_at, updated_at
+  FROM users
+
+Returns struct: GetAllUserRow (12 fields per user)
+
+All 12 fields returned for EVERY user in the database.
+
+Frontend uses (admin panel - ManageAccount):
+  ID, Name, Email, Role, Status, Image (Valid+String)
+
+UNUSED fields (6 per user):
+  Username, Batch, BannerImage, Description, SocialLinks, CreatedAt, UpdatedAt
+
+Impact: HIGH - at scale, returns 7 unused fields for every user.
+
+Optimization: SELECT only id, name, email, status, role, image
+
+------------------------------------------------------------------------
+
+6. GET /auth/main-users  ->  HandleGetAllUser  ->  GetAllUser
+                           (NOT HandleGetApprovedUser!)
+------------------------------------------------------------------------
+ROUTE MISMATCH DETECTED!
+
+SQL used: GetAllUser (all users, no filter) - user.sql:45-60
+Report expects: GetAllUserApproved (WHERE status='approved') - user.sql:61-76
+
+The function HandleGetApprovedUser exists (user.go:410-424) but is NOT
+registered in any route. The route /main-users incorrectly points to
+HandleGetAllUser.
+
+Returns struct: GetAllUserRow (12 fields per user)
+
+Frontend uses (Artist.jsx):
+  ID, Name, Role, Description.String, Image.String,
+  SocialLinks.instagram, SocialLinks.youtube
+
+UNUSED fields (5 per user):
+  Username, Email, Batch, Status, BannerImage, CreatedAt, UpdatedAt
+
+Impact: HIGH - returns 7 unused fields. Also a ROUTE BUG - returns ALL users
+  instead of only approved users.
+
+Fix: Change route to use HandleGetApprovedUser, and SELECT only needed fields.
+
+------------------------------------------------------------------------
+
+7. PATCH /auth/users/{id}  ->  HandleUpdateUserProfile  ->  PatchUserProfile
+------------------------------------------------------------------------
+SQL query (user.sql:119-145): UPDATE ... RETURNING id, name, username, email,
+  batch, status, role, image, banner_image, description, social_links,
+  created_at, updated_at
+
+Returns struct: PatchUserProfileRow (12 fields)
+
+All 12 fields returned. Frontend stores the full response in zustand store
+via setUser(updatedUser?.Data), so all fields are "used" indirectly.
+
+Optimization potential: Low - full object is needed for store update.
+
+------------------------------------------------------------------------
+
+8. GET /auth/users/{id}  ->  HandleGetUserById  ->  GetUser
+------------------------------------------------------------------------
+DEAD CODE - Not called by any frontend page according to report.
+
+Returns struct: GetUserRow (12 fields)
+
+Optimization: Remove endpoint or keep for future use.
+
+------------------------------------------------------------------------
+
+9. PATCH /auth/users/password  ->  HandlePasswordChange  ->  PatchUserPassword
+------------------------------------------------------------------------
+SQL query (user.sql:149-161): UPDATE ... RETURNING id, name, username, email,
+  updated_at
+
+Returns struct: PatchUserPasswordRow (5 fields)
+
+Not in report (might not be tracked). All 5 fields returned but frontend
+likely only checks Success. Waste possible but low impact.
+
+------------------------------------------------------------------------
+
+================================================================================
+ ART ROUTES
+================================================================================
+
+10. POST /art/  ->  HandleArtCreation  ->  CreateArt
+------------------------------------------------------------------------
+SQL query (art.sql:1-4): INSERT INTO art (...) VALUES (...)
+  RETURNING id, name, description, image, tags, status, user_id,
+  created_at, updated_at
+
+Returns struct: Art (9 fields)
+
+All 9 fields returned in JSON.
+
+Frontend uses only: Data.ID
+
+Waste: 8 fields - Name, Description, Image, Tags, Status, UserID,
+  CreatedAt, UpdatedAt
+
+Impact: MODERATE - each art creation returns 8 unused fields.
+
+Optimization: RETURNING id only.
+
+------------------------------------------------------------------------
+
+11. GET /art  ->  HandleGetApprovedArt  ->  ListArt
+------------------------------------------------------------------------
+SQL query (art.sql:51-54): SELECT * FROM art WHERE status='approved'
+  ORDER BY created_at DESC
+
+Returns: []Art (9 fields per artwork)
+
+Frontend uses:
+  ID, UserID, Image, Name, Description (Valid+String), Tags
+
+UNUSED fields (3 per artwork):
+  Status, CreatedAt, UpdatedAt
+
+Impact: HIGH at scale - Status is always 'approved' (redundant),
+  timestamps unused.
+
+Optimization: SELECT only id, name, description, image, tags, user_id
+
+------------------------------------------------------------------------
+
+12. GET /art/{id}  ->  HandleGetArtById  ->  GetArtByID
+------------------------------------------------------------------------
+SQL query (art.sql:27-38): SELECT id, name, description, image, tags,
+  user_id, created_at, updated_at FROM art WHERE id = $1
+
+Returns struct: GetArtByIDRow (8 fields)
+
+Frontend uses:
+  Name, Description.String, Tags, Image
+
+UNUSED fields (4):
+  ID, UserID, CreatedAt, UpdatedAt
+
+Note: ID and UserID are small (UUIDs) but timestamps are 8 bytes each.
+Impact: MODERATE - 4 of 8 fields unused.
+
+Optimization: SELECT only name, description, image, tags
+
+------------------------------------------------------------------------
+
+13. PATCH /art/{id}  ->  HandlerArtUpdation  ->  UpdateArt
+------------------------------------------------------------------------
+SQL query (art.sql:71-80): UPDATE ... RETURNING id, name, description, image,
+  tags, status, user_id, created_at, updated_at
+
+Returns struct: Art (9 fields)
+
+All 9 fields returned.
+
+Frontend uses only: Data.ID
+
+Waste: 8 fields - Name, Description, Image, Tags, Status, UserID,
+  CreatedAt, UpdatedAt
+
+Impact: MODERATE
+
+Optimization: RETURNING id only.
+
+------------------------------------------------------------------------
+
+14. DELETE /art/{id}  ->  HandleArtDeletion  ->  DeleteArt
+------------------------------------------------------------------------
+SQL query (art.sql:90-93): DELETE FROM art WHERE id=$1 AND user_id=$2
+  RETURNING id
+
+Returns: uuid.UUID
+
+Handler wraps: RespondWithJson(w, "Art Work Deleted")
+→ returns string, not the ID. The report says frontend uses Data.ID,
+  but the actual string "Art Work Deleted" is returned. Potential bug
+  or report inaccuracy.
+
+No DB waste (single field).
+
+------------------------------------------------------------------------
+
+15. GET /art/u/{userId}  ->  HandleGetArts  ->  GetArtByUser
+------------------------------------------------------------------------
+SQL query (art.sql:41-44): SELECT * FROM art WHERE user_id=$1
+  ORDER BY created_at DESC
+
+Returns: []Art (9 fields per artwork)
+
+Frontend uses:
+  ID, Image, Name, Description.String
+
+UNUSED fields (5 per artwork):
+  Tags, Status, UserID, CreatedAt, UpdatedAt
+
+Impact: HIGH at scale - 5 of 9 fields wasted per artwork.
+
+Optimization: SELECT only id, name, description, image
+
+------------------------------------------------------------------------
+
+16. GET /art/p/{usrId}/{id}  ->  HandleGetArtProfileById  ->  GetArtProfileByID
+------------------------------------------------------------------------
+SQL query (art.sql:6-25): SELECT a.id, a.name, a.description, a.image, a.tags,
+  a.status, a.user_id, a.created_at, a.updated_at,
+  u.id AS user_id_ref, u.username, u.role, u.status, u.image AS user_image
+  FROM art a JOIN users u ON a.user_id = u.id WHERE a.id=$1 AND a.user_id=$2
+
+Returns struct: GetArtProfileByIDRow (14 fields)
+
+Frontend uses:
+  ID, Status, UserID, Username.String, UserImage.String, Image, Name,
+  Description.String
+
+UNUSED fields (6):
+  Tags, CreatedAt, UpdatedAt, UserIDRef (duplicate of UserID),
+  Role, Status_2 (user status, not the art status)
+
+Note: UserIDRef is a duplicate of UserID (both are the same UUID).
+      u.role and u.status (Status_2) are fetched but unused.
+      Tags, CreatedAt, UpdatedAt also unused.
+
+Optimization: SELECT only needed fields.
+
+------------------------------------------------------------------------
+
+17. GET /art/u/profile/{userId}  ->  HandlerGetArtistProfile  ->  GetUser + GetArtByUser
+------------------------------------------------------------------------
+This endpoint calls TWO separate queries:
+  a) GetUser (returns GetUserRow - 12 fields)
+  b) GetArtByUser (returns []Art - 9 fields each)
+
+Returns profile struct { User, Art } - 12 + 9N fields.
+
+Frontend uses (User part):
+  ID, Name, Role, Status, Username (Valid+String), Image (Valid+String),
+  BannerImage (Valid+String), Batch (Valid+String), Description.String,
+  SocialLinks (instagram, youtube)
+
+Frontend uses (Art part):
+  ID, Image, Name, Description.String
+
+UNUSED fields (User):
+  Email, CreatedAt, UpdatedAt
+
+UNUSED fields (Art per artwork):
+  Tags, Status, UserID, CreatedAt, UpdatedAt
+
+Impact: HIGH - 3 user fields + 5 per artwork wasted.
+
+Optimization: SELECT only needed user fields; SELECT only id, name,
+  description, image for art.
+
+------------------------------------------------------------------------
+
+18. GET /art/pending-art  ->  HandleGetPendingArt  ->  ListPendingArt
+------------------------------------------------------------------------
+SQL query (art.sql:47-50): SELECT * FROM art WHERE status='pending'
+  ORDER BY created_at DESC
+
+Returns: []Art (9 fields per artwork)
+
+Frontend uses (ApproveArt admin component):
+  ID, Name, Image, Status, Description (Valid+String), Tags, CreatedAt
+
+UNUSED fields (2 per artwork):
+  UserID, UpdatedAt
+
+Impact: LOW - only 2 fields wasted.
+
+Optimization: SELECT without user_id and updated_at.
+
+------------------------------------------------------------------------
+
+19. PATCH /admin/arts/{id}/status?status=  ->  HandlerArtStatus  ->  UpdateArtStatus
+------------------------------------------------------------------------
+SQL query (art.sql:82-88): UPDATE art SET status=$2, updated_at=NOW()
+  WHERE id=$1 RETURNING id, name, description, image, tags, status,
+  user_id, created_at, updated_at
+
+Returns struct: Art (9 fields)
+
+Frontend uses:
+  ID, Status
+
+UNUSED fields (7):
+  Name, Description, Image, Tags, UserID, CreatedAt, UpdatedAt
+
+Impact: MODERATE - only 2 of 9 fields used.
+
+Optimization: RETURNING id, status only.
+
+------------------------------------------------------------------------
+
+================================================================================
+ EVENT ROUTES
+================================================================================
+
+20. GET /event/  ->  HandleGetAllEvent  ->  ListEvents
+------------------------------------------------------------------------
+SQL query (event.sql:26-29): SELECT * FROM events ORDER BY created_at DESC
+
+Returns: []Event (10 fields per event)
+
+Frontend uses:
+  ID, Name, Description.String, Image.String, EventDate, Venue.String, Status
+
+UNUSED fields (3 per event):
+  BannerImage, CreatedAt, UpdatedAt
+
+Impact: MODERATE at scale.
+
+Optimization: SELECT without banner_image, created_at, updated_at
+
+------------------------------------------------------------------------
+
+21. GET /event/{id}  ->  HandleGetEventById  ->  GetEventByID
+------------------------------------------------------------------------
+SQL query (event.sql:10-23): SELECT id, name, description, venue, image,
+  banner_image, event_date, status, created_at, updated_at FROM events
+  WHERE id = $1
+
+Returns struct: Event (10 fields)
+
+Frontend uses:
+  ID, Name, Description.String, Image.String, BannerImage.String,
+  EventDate, Venue.String, Status
+
+UNUSED fields (2):
+  CreatedAt, UpdatedAt
+
+Impact: LOW
+
+Optimization: SELECT without created_at, updated_at
+
+------------------------------------------------------------------------
+
+22. POST /event/  ->  HandleCreateEvent  ->  CreateEvent
+------------------------------------------------------------------------
+SQL query (event.sql:1-8): INSERT INTO events (...) VALUES (...)
+  RETURNING id, name, description, venue, image, banner_image, event_date,
+  status, created_at, updated_at
+
+Returns struct: Event (10 fields)
+
+Frontend uses only: Data.ID
+
+Waste: 9 fields - Name, Description, Venue, Image, BannerImage, EventDate,
+  Status, CreatedAt, UpdatedAt.
+
+Impact: MODERATE
+
+Optimization: RETURNING id only.
+
+------------------------------------------------------------------------
+
+23. PATCH /event/{id}  ->  HandleUpdateEvent  ->  UpdateEvent
+------------------------------------------------------------------------
+SQL query (event.sql:46-58): UPDATE ... RETURNING id, name, description,
+  venue, image, banner_image, event_date, status, created_at, updated_at
+
+Returns struct: Event (10 fields)
+
+Frontend uses only: Data.ID
+
+Waste: 9 fields
+
+Impact: MODERATE
+
+Optimization: RETURNING id only.
+
+------------------------------------------------------------------------
+
+24. DELETE /event/{id}  ->  HandleDeleteEvent  ->  DeleteEvent
+------------------------------------------------------------------------
+SQL query (event.sql:61-64): DELETE FROM events WHERE id=$1 RETURNING id
+
+Returns: uuid.UUID
+
+Handler wraps: RespondWithJson(w, "ok") → returns string.
+Frontend uses: Success, Message
+
+No DB waste.
+
+------------------------------------------------------------------------
+
+25. GET /event/u/{id}  ->  HandleGetMyEvent  ->  GetMyEventById
+------------------------------------------------------------------------
+SQL query (event_Attendees.sql:42-48): SELECT e.* FROM events e
+  JOIN event_attendees ea ON ea.event_id=e.id
+  WHERE ea.user_id=$1 AND ea.event_id=$2 LIMIT 1
+
+Returns struct: Event (10 fields)
+
+Frontend uses: Success only (checks if user is registered)
+
+WASTE: All 10 fields fetched but only Success boolean used!
+
+Impact: HIGH for this endpoint - returns entire event row just to check
+  if a registration exists.
+
+Optimization: SELECT 1 or COUNT(*) instead of e.*
+
+------------------------------------------------------------------------
+
+26. GET /event/all  ->  HandleGetMyAllEvent  ->  ListMyEvents
+------------------------------------------------------------------------
+SQL query (event_Attendees.sql:35-40): SELECT e.* FROM events e
+  JOIN event_attendees ea ON ea.event_id=e.id
+  WHERE ea.user_id=$1 ORDER BY e.event_date ASC
+
+Returns: []Event (10 fields per event)
+
+Frontend uses:
+  ID, Name, EventDate, Image.String, Description.String, Venue.String
+
+UNUSED fields (4 per event):
+  BannerImage, Status, CreatedAt, UpdatedAt
+
+Impact: MODERATE at scale.
+
+Optimization: SELECT only needed fields.
+
+------------------------------------------------------------------------
+
+27. GET /event/{id}/attendees  ->  HandleAllEventAttendee  ->  ListEventAttendees
+------------------------------------------------------------------------
+SQL query (event_Attendees.sql:17-27): SELECT u.id, u.name, u.username,
+  u.email, u.image FROM users u JOIN event_attendees ea ...
+  WHERE ea.event_id=$1 ORDER BY ea.joined_at ASC
+
+Returns struct: ListEventAttendeesRow (5 fields: ID, Name, Username, Email, Image)
+
+All 5 fields returned. All appear to be used.
+
+However, REPORT also lists Batch.String and Status as used by frontend,
+but THESE FIELDS ARE NOT IN THE SQL QUERY. The query only selects 5 fields.
+Frontend may be referencing fields that don't exist in response.
+
+POTENTIAL BUG: Frontend expects batch and status fields on attendees
+but the backend never sends them.
+
+------------------------------------------------------------------------
+
+28. POST /event/{id}/join  ->  HandleJoinEvent  ->  EnrollUserToEvent
+------------------------------------------------------------------------
+SQL query (event_Attendees.sql:1-8): INSERT INTO event_attendees (...)
+  VALUES (...) RETURNING id, event_id, user_id, joined_at
+
+Returns struct: EventAttendee (4 fields)
+
+Frontend uses: Success only
+
+Waste: All 4 data fields returned but unused (only Success checked).
+
+Impact: LOW (single row insert)
+
+------------------------------------------------------------------------
+
+29. DELETE /event/{id}/attendee/{userid}  ->  HandleDeleteEventAttendee
+    ->  RemoveUserFromEvent
+------------------------------------------------------------------------
+SQL query (event_Attendees.sql:11-14): DELETE FROM event_attendees
+  WHERE event_id=$1 AND user_id=$2 RETURNING event_id
+
+Returns: uuid.UUID (event_id)
+
+Handler wraps: RespondWithJson(w, "ok")
+Only "ok" string returned. Frontend uses Data to filter list.
+
+No DB waste (single field returned, even if handler replaces it).
+
+------------------------------------------------------------------------
+
+================================================================================
+ ADMIN ROUTES
+================================================================================
+
+30. PATCH /admin/users/{id}/status?status= or ?role=  ->  HandlerRole  ->  PatchUserAdmin
+------------------------------------------------------------------------
+SQL query (user.sql:166-186): UPDATE users SET ... RETURNING id, name,
+  username, email, batch, status, role, image, banner_image, description,
+  social_links, created_at, updated_at
+
+Returns struct: PatchUserAdminRow (12 fields)
+
+Frontend uses:
+  Data.Status, Success
+
+UNUSED fields (11):
+  ID, Name, Username, Email, Batch, Role, Image, BannerImage, Description,
+  SocialLinks, CreatedAt, UpdatedAt
+
+Impact: HIGH - 11 of 12 fields wasted.
+
+Optimization: RETURNING id, status only (or just status).
+
+------------------------------------------------------------------------
+
+================================================================================
+ ART METADATA ROUTES (not in original report)
+================================================================================
+
+31. POST /art/{art_id}/comment  ->  HandleComment  ->  AddArtComment
+------------------------------------------------------------------------
+SQL query (artMetaData.sql:26-29): INSERT INTO art_comments (...) VALUES (...)
+  RETURNING id, art_id, user_id, comment, created_at
+
+Returns struct: ArtComment (5 fields)
+
+All fields likely consumed by frontend on creation.
+Potential waste: depends on frontend usage.
+
+------------------------------------------------------------------------
+
+32. GET /art/{id}/comments  ->  HandleGetArtComments  ->  GetArtCommentsByArtID
+------------------------------------------------------------------------
+SQL query (artMetaData.sql:38-50): SELECT ac.id, ac.art_id, ac.user_id,
+  u.name AS user_name, u.image AS user_image, ac.comment, ac.created_at
+  FROM art_comments ac JOIN users u ON u.id = ac.user_id ...
+
+Returns struct: GetArtCommentsByArtIDRow (7 fields)
+
+All fields likely used by frontend for comment display.
+
+------------------------------------------------------------------------
+
+33. POST /art/{art_id}/like  ->  HandleLike  ->  LikeArt
+------------------------------------------------------------------------
+SQL query (artMetaData.sql:1-4): INSERT INTO art_likes (...) VALUES (...)
+  RETURNING id, art_id, user_id, created_at
+
+Returns struct: ArtLike (4 fields)
+
+------------------------------------------------------------------------
+
+34. POST /art/{art_id}/unlike  ->  HandleUnLike  ->  UnlikeArt
+------------------------------------------------------------------------
+SQL query (artMetaData.sql:7-10): DELETE FROM art_likes
+  WHERE art_id=$1 AND user_id=$2 RETURNING art_id
+
+Returns: uuid.UUID (art_id)
+
+------------------------------------------------------------------------
+
+35. GET /art/{id}/comments/count  ->  HandleGetArtCommentsCount  ->  GetArtCommentsCount
+------------------------------------------------------------------------
+Returns: int32 (single value)
+
+------------------------------------------------------------------------
+
+36. GET /art/{id}/likes/count  ->  HandleGetArtLikeCount  ->  GetArtLikesCount
+------------------------------------------------------------------------
+Returns: int32 (single value)
+
+------------------------------------------------------------------------
+
+================================================================================
+ SUMMARY OF HIGH-IMPACT WASTE
+================================================================================
+
+ Rank  Endpoint                    Fields Wasted / Total     Waste %
+ ─────────────────────────────────────────────────────────────────────
+  1    GET /event/u/{id}           10/10 (entire Event)      100%
+  2    PATCH /admin/users/{id}     11/12                      92%
+  3    POST /art/                   8/9                       89%
+  4    POST /event/                 9/10                      90%
+  5    PATCH /art/{id}              8/9                       89%
+  6    PATCH /event/{id}            9/10                      90%
+  7    POST /auth/users            11/12                      92%
+  8    GET /art/p/{id}/{id}         6/14 (profile view)       43%
+  9    GET /art/u/{userId}          5/9                       56%
+ 10    GET /auth/main-users         7/12                      58%
+ 11    GET /auth/users              7/12 (admin)              58%
+ 12    GET /event/                  3/10                      30%
+ 13    GET /event/all               4/10                      40%
+ 14    GET /art/                    3/9                       33%
+ 15    PATCH /admin/arts/{id}/status 7/9                      78%
+
+================================================================================
+ DEAD CODE & BUGS FOUND
+================================================================================
+
+1. DEAD HANDLER: HandleGetApprovedUser (user.go:410)
+   - Function exists to return only approved users
+   - NOT registered in any route
+   - Route /auth/main-users uses HandleGetAllUser instead (returns ALL users)
+
+2. DEAD ENDPOINT: GET /auth/users/{id} (HandleGetUserById)
+   - Not called by any frontend page per report.md
+   - Returns all user fields
+
+3. MISSING FIELDS IN SQL: GET /event/{id}/attendees
+   - SQL only returns: id, name, username, email, image (5 fields)
+   - Frontend expects: batch and status too
+   - Report marks batch and status as used (✅) but they are NEVER sent
+   - Either report is wrong or frontend has a bug referencing undefined fields
+
+4. CASE INCONSISTENCY: POST /auth/login vs POST /auth/users
+   - Login returns lowercase { "id": ... }
+   - Signup returns uppercase { "ID": ... } (sqlc default serialization)
+   - Frontend must handle both cases
+
+5. DELETE RETURNS STRING NOT ID:
+   - DELETE /art/{id} returns: "Art Work Deleted" (string)
+   - DELETE /event/{id} returns: "ok" (string)
+   - But report says frontend uses Data.ID from these endpoints
+
+================================================================================
+ OPTIMIZATION RECOMMENDATIONS
+================================================================================
+
+A. Trivial (change RETURNING clause in SQL):
+   - POST /art/         → RETURNING id
+   - PATCH /art/{id}    → RETURNING id
+   - POST /event/       → RETURNING id
+   - PATCH /event/{id}  → RETURNING id
+   - PATCH /admin/arts/{id}/status → RETURNING id, status
+   - PATCH /admin/users/{id}/status → RETURNING id, status
+
+B. Medium (change SELECT in SQL):
+   - GET /art/          → SELECT id, name, description, image, tags, user_id
+   - GET /art/{id}      → SELECT name, description, image, tags
+   - GET /art/u/{id}    → SELECT id, name, description, image
+   - GET /auth/users    → SELECT id, name, email, status, role, image
+   - GET /auth/main-users → SELECT id, name, role, description, image, social_links
+   - GET /event/        → SELECT without banner_image, created_at, updated_at
+   - GET /event/all     → SELECT without banner_image, status, created_at, updated_at
+
+C. Fix route bugs:
+   - /auth/main-users should use HandleGetApprovedUser, not HandleGetAllUser
+   - GET /event/u/{id} should SELECT 1 instead of e.* (only checking registration)
+
+D. Attendee query fix:
+   - Add batch and status to ListEventAttendees SELECT if frontend needs them
+   - Or remove batch/status usage from frontend
+
+================================================================================

@@ -17,8 +17,9 @@ type bucket struct {
 var (
 	visitor = make(map[string]*bucket)
 	mu      sync.Mutex
-	maxRate = 5
-	rate    = 1
+	maxRate = 30
+
+	rate = 10
 )
 
 func init() {

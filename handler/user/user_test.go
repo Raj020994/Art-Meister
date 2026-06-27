@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Raj020994/internal/database"
-	"github.com/Raj020994/middleware"
-	"github.com/Raj020994/model"
-	"github.com/Raj020994/utlis"
+	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
+	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
+	"github.com/Blue-Onion/ArtmeisterBackend/model"
+	"github.com/Blue-Onion/ArtmeisterBackend/utlis"
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
 )
@@ -25,41 +25,30 @@ type mockUserRepo struct {
 	emails       map[string]database.User
 	createErr    error
 	getErr       error
+	getAllErr    error
 	updateErr    error
 	passwordErr  error
-	imagesErr    error
 }
 
-func (m *mockUserRepo) CreateUser(ctx context.Context, arg database.CreateUserParams) (database.CreateUserRow, error) {
+func (m *mockUserRepo) CreateUser(ctx context.Context, arg database.CreateUserParams) (uuid.UUID, error) {
 	if m.createErr != nil {
-		return database.CreateUserRow{}, m.createErr
+		return uuid.UUID{}, m.createErr
 	}
 	id := uuid.New()
 	u := database.User{
-		ID:          id,
-		Name:        arg.Name,
-		Email:       arg.Email,
-		Password:    arg.Password,
-		Batch:       arg.Batch,
-		Description: arg.Description,
-		Status:      arg.Status,
-		Role:        arg.Role,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:        id,
+		Name:      arg.Name,
+		Email:     arg.Email,
+		Password:  arg.Password,
+		Batch:     sql.NullString{String: "", Valid: true},
+		Status:    database.AccountStatusPending,
+		Role:      database.UserRoleUser,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 	m.users[id] = u
 	m.emails[arg.Email] = u
-	return database.CreateUserRow{
-		ID:          id,
-		Name:        u.Name,
-		Email:       u.Email,
-		Batch:       u.Batch,
-		Status:      u.Status,
-		Role:        u.Role,
-		Description: u.Description,
-		CreatedAt:   u.CreatedAt,
-		UpdatedAt:   u.UpdatedAt,
-	}, nil
+	return id, nil
 }
 
 func (m *mockUserRepo) GetUser(ctx context.Context, id uuid.UUID) (database.GetUserRow, error) {
@@ -73,13 +62,15 @@ func (m *mockUserRepo) GetUser(ctx context.Context, id uuid.UUID) (database.GetU
 	return database.GetUserRow{
 		ID:          u.ID,
 		Name:        u.Name,
+		Username:    u.Username,
 		Email:       u.Email,
 		Batch:       u.Batch,
 		Status:      u.Status,
 		Role:        u.Role,
+		Image:       u.Image,
+		BannerImage: u.BannerImage,
 		Description: u.Description,
-		CreatedAt:   u.CreatedAt,
-		UpdatedAt:   u.UpdatedAt,
+		SocialLinks: u.SocialLinks,
 	}, nil
 }
 
@@ -89,17 +80,36 @@ func (m *mockUserRepo) GetUserByEmail(ctx context.Context, email string) (databa
 		return database.GetUserByEmailRow{}, sql.ErrNoRows
 	}
 	return database.GetUserByEmailRow{
-		ID:          u.ID,
-		Name:        u.Name,
-		Email:       u.Email,
-		Password:    u.Password,
-		Batch:       u.Batch,
-		Status:      u.Status,
-		Role:        u.Role,
-		Description: u.Description,
-		CreatedAt:   u.CreatedAt,
-		UpdatedAt:   u.UpdatedAt,
+		ID:       u.ID,
+		Name:     u.Name,
+		Email:    u.Email,
+		Password: u.Password,
+		Image:    u.Image,
 	}, nil
+}
+
+func (m *mockUserRepo) GetUserByUsername(ctx context.Context, username sql.NullString) (database.GetUserByUsernameRow, error) {
+	if m.getErr != nil {
+		return database.GetUserByUsernameRow{}, m.getErr
+	}
+	for _, u := range m.users {
+		if u.Username.Valid && u.Username.String == username.String {
+			return database.GetUserByUsernameRow{
+				ID:          u.ID,
+				Name:        u.Name,
+				Username:    u.Username,
+				Email:       u.Email,
+				Batch:       u.Batch,
+				Status:      u.Status,
+				Role:        u.Role,
+				Image:       u.Image,
+				BannerImage: u.BannerImage,
+				Description: u.Description,
+				SocialLinks: u.SocialLinks,
+			}, nil
+		}
+	}
+	return database.GetUserByUsernameRow{}, sql.ErrNoRows
 }
 
 func (m *mockUserRepo) PatchUserProfile(ctx context.Context, arg database.PatchUserProfileParams) (database.PatchUserProfileRow, error) {
@@ -116,56 +126,82 @@ func (m *mockUserRepo) PatchUserProfile(ctx context.Context, arg database.PatchU
 	if arg.Email.Valid {
 		u.Email = arg.Email.String
 	}
+	if arg.Username.Valid {
+		u.Username = arg.Username
+	}
 	m.users[arg.ID] = u
 	return database.PatchUserProfileRow{
 		ID:          u.ID,
 		Name:        u.Name,
+		Username:    u.Username,
 		Email:       u.Email,
 		Batch:       u.Batch,
 		Status:      u.Status,
 		Role:        u.Role,
+		Image:       u.Image,
+		BannerImage: u.BannerImage,
 		Description: u.Description,
-		CreatedAt:   u.CreatedAt,
-		UpdatedAt:   u.UpdatedAt,
+		SocialLinks: u.SocialLinks,
 	}, nil
 }
 
-func (m *mockUserRepo) PatchUserPassword(ctx context.Context, arg database.PatchUserPasswordParams) (database.PatchUserPasswordRow, error) {
+func (m *mockUserRepo) PatchUserPassword(ctx context.Context, arg database.PatchUserPasswordParams) (uuid.UUID, error) {
 	if m.passwordErr != nil {
-		return database.PatchUserPasswordRow{}, m.passwordErr
+		return uuid.UUID{}, m.passwordErr
 	}
 	u, ok := m.users[arg.ID]
 	if !ok {
-		return database.PatchUserPasswordRow{}, sql.ErrNoRows
+		return uuid.UUID{}, sql.ErrNoRows
 	}
 	u.Password = arg.Password
 	m.users[arg.ID] = u
-	return database.PatchUserPasswordRow{
-		ID:        u.ID,
-		UpdatedAt: time.Now(),
-	}, nil
+	return u.ID, nil
 }
 
-func (m *mockUserRepo) PatchUserImages(ctx context.Context, arg database.PatchUserImagesParams) (database.PatchUserImagesRow, error) {
-	if m.imagesErr != nil {
-		return database.PatchUserImagesRow{}, m.imagesErr
+func (m *mockUserRepo) GetAllUser(ctx context.Context) ([]database.GetAllUserRow, error) {
+	if m.getAllErr != nil {
+		return nil, m.getAllErr
 	}
-	u, ok := m.users[arg.ID]
+	var res []database.GetAllUserRow
+	for _, u := range m.users {
+		res = append(res, database.GetAllUserRow{
+			ID:     u.ID,
+			Name:   u.Name,
+			Email:  u.Email,
+			Status: u.Status,
+			Role:   u.Role,
+			Image:  u.Image,
+		})
+	}
+	return res, nil
+}
+
+func (m *mockUserRepo) GetAllUserApproved(ctx context.Context) ([]database.GetAllUserApprovedRow, error) {
+	if m.getAllErr != nil {
+		return nil, m.getAllErr
+	}
+	var res []database.GetAllUserApprovedRow
+	for _, u := range m.users {
+		if u.Status == database.AccountStatusApproved {
+			res = append(res, database.GetAllUserApprovedRow{
+				ID:   u.ID,
+				Name: u.Name,
+				Role: u.Role,
+			})
+		}
+	}
+	return res, nil
+}
+
+func (m *mockUserRepo) CheckUsrById(ctx context.Context, id uuid.UUID) (database.CheckUsrByIdRow, error) {
+	u, ok := m.users[id]
 	if !ok {
-		return database.PatchUserImagesRow{}, sql.ErrNoRows
+		return database.CheckUsrByIdRow{}, sql.ErrNoRows
 	}
-	if arg.Image.Valid {
-		u.Image = arg.Image
-	}
-	if arg.BannerImage.Valid {
-		u.BannerImage = arg.BannerImage
-	}
-	m.users[arg.ID] = u
-	return database.PatchUserImagesRow{
-		ID:          u.ID,
-		Image:       u.Image,
-		BannerImage: u.BannerImage,
-		UpdatedAt:   time.Now(),
+	return database.CheckUsrByIdRow{
+		ID:     u.ID,
+		Status: u.Status,
+		Role:   u.Role,
 	}, nil
 }
 
@@ -180,6 +216,27 @@ func strPtr(s string) *string {
 	return &s
 }
 
+func seedUser(repo *mockUserRepo, overrides ...func(*database.User)) (uuid.UUID, string) {
+	id := uuid.New()
+	hashed, _ := utlis.HashPassword("default_password")
+	u := database.User{
+		ID:        id,
+		Name:      "Default User",
+		Email:     fmt.Sprintf("user-%s@example.com", id.String()[:8]),
+		Password:  hashed,
+		Status:    database.AccountStatusApproved,
+		Role:      database.UserRoleUser,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	for _, o := range overrides {
+		o(&u)
+	}
+	repo.users[id] = u
+	repo.emails[u.Email] = u
+	return id, u.Email
+}
+
 func TestHandleCreateUser(t *testing.T) {
 	repo := newMockUserRepo()
 	h := &Handler{Repo: repo}
@@ -189,54 +246,47 @@ func TestHandleCreateUser(t *testing.T) {
 		body           any
 		mockErr        error
 		expectedStatus int
-		expectSuccess  bool
+		expectCookie   bool
 	}{
 		{
-			name: "Success Registration",
+			name: "successful registration",
 			body: model.CreateUser{
-				Name:        "Alice",
-				Email:       "alice@example.com",
-				Password:    "password123",
-				Batch:       "2026",
-				Description: "Art Lover",
+				Name:     "Alice",
+				Email:    "alice@example.com",
+				Password: "password123",
 			},
 			expectedStatus: http.StatusCreated,
-			expectSuccess:  true,
+			expectCookie:   true,
 		},
 		{
-			name:           "Invalid JSON Body",
+			name:           "invalid json body",
 			body:           "{invalid-json}",
 			expectedStatus: http.StatusBadRequest,
-			expectSuccess:  false,
 		},
 		{
-			name: "Repo Create Error (Duplicate Email)",
+			name:           "empty body",
+			body:           "",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "repo create error",
 			body: model.CreateUser{
-				Name:     "Alice Dupe",
-				Email:    "alice@example.com",
-				Password: "password",
-				Batch:    "2026",
+				Name:     "Bob",
+				Email:    "bob@example.com",
+				Password: "password123",
 			},
 			mockErr:        fmt.Errorf("pq: duplicate key value violates unique constraint"),
 			expectedStatus: http.StatusInternalServerError,
-			expectSuccess:  false,
 		},
 		{
-			name: "Empty Required Fields",
+			name: "empty name and email still passes validator",
 			body: model.CreateUser{
 				Name:     "",
 				Email:    "",
 				Password: "",
-				Batch:    "",
 			},
-			expectedStatus: http.StatusCreated, // Handler does not validate empty fields
-			expectSuccess:  true,
-		},
-		{
-			name:           "Empty Body",
-			body:           "",
-			expectedStatus: http.StatusBadRequest,
-			expectSuccess:  false,
+			expectedStatus: http.StatusCreated,
+			expectCookie:   true,
 		},
 	}
 
@@ -256,17 +306,18 @@ func TestHandleCreateUser(t *testing.T) {
 			h.HandleCreateUser(rr, req)
 
 			if rr.Code != tc.expectedStatus {
-				t.Errorf("expected status %d, got %d", tc.expectedStatus, rr.Code)
+				t.Errorf("expected status %d, got %d: %s", tc.expectedStatus, rr.Code, rr.Body.String())
 			}
 
-			var response struct {
-				Success bool
-				Data    any
-			}
-			if err := json.NewDecoder(rr.Body).Decode(&response); err == nil {
-				if response.Success != tc.expectSuccess {
-					t.Errorf("expected Success to be %v, got %v", tc.expectSuccess, response.Success)
+			cookies := rr.Result().Cookies()
+			foundCookie := false
+			for _, c := range cookies {
+				if c.Name == "authToken" {
+					foundCookie = true
 				}
+			}
+			if tc.expectCookie && !foundCookie {
+				t.Errorf("expected authToken cookie in response")
 			}
 		})
 	}
@@ -276,19 +327,14 @@ func TestHandleLogin(t *testing.T) {
 	repo := newMockUserRepo()
 	h := &Handler{Repo: repo}
 
-	// Hash password and seed mock DB
 	pwd := "mypassword"
 	hashed, _ := utlis.HashPassword(pwd)
-	userUUID := uuid.New()
-	userSeed := database.User{
-		ID:       userUUID,
-		Name:     "Alice",
-		Email:    "alice@example.com",
-		Password: hashed,
-		Status:   database.AccountStatusApproved,
-	}
-	repo.users[userUUID] = userSeed
-	repo.emails[userSeed.Email] = userSeed
+	userID, _ := seedUser(repo, func(u *database.User) {
+		u.Password = hashed
+		u.Email = "alice@example.com"
+		u.Name = "Alice"
+	})
+	_ = userID
 
 	tests := []struct {
 		name           string
@@ -297,7 +343,7 @@ func TestHandleLogin(t *testing.T) {
 		expectCookie   bool
 	}{
 		{
-			name: "Successful Login",
+			name: "successful login",
 			body: model.AuthenticateUser{
 				Email:    "alice@example.com",
 				Password: pwd,
@@ -306,46 +352,41 @@ func TestHandleLogin(t *testing.T) {
 			expectCookie:   true,
 		},
 		{
-			name: "Non-existent user",
+			name: "non-existent email",
 			body: model.AuthenticateUser{
 				Email:    "unknown@example.com",
 				Password: pwd,
 			},
 			expectedStatus: http.StatusNotFound,
-			expectCookie:   false,
 		},
 		{
-			name: "Incorrect Password",
+			name: "incorrect password",
 			body: model.AuthenticateUser{
 				Email:    "alice@example.com",
 				Password: "wrongpassword",
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectCookie:   false,
 		},
 		{
-			name:           "Invalid JSON Body",
+			name:           "invalid json body",
 			body:           "{bad-json}",
 			expectedStatus: http.StatusBadRequest,
-			expectCookie:   false,
 		},
 		{
-			name: "Empty Email",
+			name: "empty email",
 			body: model.AuthenticateUser{
 				Email:    "",
 				Password: pwd,
 			},
 			expectedStatus: http.StatusNotFound,
-			expectCookie:   false,
 		},
 		{
-			name: "Empty Password",
+			name: "empty password",
 			body: model.AuthenticateUser{
 				Email:    "alice@example.com",
 				Password: "",
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectCookie:   false,
 		},
 	}
 
@@ -364,18 +405,18 @@ func TestHandleLogin(t *testing.T) {
 			h.HandleLogin(rr, req)
 
 			if rr.Code != tc.expectedStatus {
-				t.Errorf("expected status %d, got %d", tc.expectedStatus, rr.Code)
+				t.Errorf("expected status %d, got %d: %s", tc.expectedStatus, rr.Code, rr.Body.String())
 			}
 
 			cookies := rr.Result().Cookies()
 			foundCookie := false
-			for _, cookie := range cookies {
-				if cookie.Name == "authToken" {
+			for _, c := range cookies {
+				if c.Name == "authToken" {
 					foundCookie = true
 				}
 			}
 			if tc.expectCookie != foundCookie {
-				t.Errorf("expected cookie presence: %v, got %v", tc.expectCookie, foundCookie)
+				t.Errorf("expected cookie presence %v, got %v", tc.expectCookie, foundCookie)
 			}
 		})
 	}
@@ -394,13 +435,27 @@ func TestHandleLogOut(t *testing.T) {
 
 	cookies := rr.Result().Cookies()
 	foundClearedCookie := false
-	for _, cookie := range cookies {
-		if cookie.Name == "authToken" && cookie.MaxAge == -1 {
+	for _, c := range cookies {
+		if c.Name == "authToken" && c.MaxAge == -1 {
 			foundClearedCookie = true
 		}
 	}
 	if !foundClearedCookie {
-		t.Errorf("expected authToken cookie to be cleared")
+		t.Errorf("expected authToken cookie to be cleared (MaxAge=-1)")
+	}
+
+	var resp struct {
+		Success bool
+		Data    map[string]string
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("expected success=true, got false")
+	}
+	if resp.Data["message"] != "Logged out successfully" {
+		t.Errorf("expected logout message, got %v", resp.Data)
 	}
 }
 
@@ -408,96 +463,86 @@ func TestHandleUpdateUserProfile(t *testing.T) {
 	repo := newMockUserRepo()
 	h := &Handler{Repo: repo}
 
-	userUUID := uuid.New()
-	userSeed := database.User{
-		ID:     userUUID,
-		Name:   "Alice",
-		Email:  "alice@example.com",
-		Role:   database.UserRoleUser,
-		Status: database.AccountStatusApproved,
-	}
-	repo.users[userUUID] = userSeed
+	userID, _ := seedUser(repo, func(u *database.User) {
+		u.Name = "Alice"
+		u.Email = "alice@example.com"
+		u.Role = database.UserRoleUser
+		u.Status = database.AccountStatusApproved
+	})
 
 	tests := []struct {
 		name           string
 		userIDParam    string
-		authCtxUser    *middleware.User // nil means unauthenticated
+		authCtxUser    *middleware.User
 		body           any
 		mockErr        error
 		expectedStatus int
 	}{
 		{
-			name:        "Success Profile Update (Self)",
-			userIDParam: userUUID.String(),
+			name:        "successful self update",
+			userIDParam: userID.String(),
 			authCtxUser: &middleware.User{
-				ID:   userUUID,
+				ID:   userID,
 				Role: database.UserRoleUser,
 			},
-			body: model.PatchUserProfileRequest{
-				Name:  strPtr("Alice Updated"),
-				Email: strPtr("alice.updated@example.com"),
-			},
+			body:           model.PatchUserProfileRequest{UserName: strPtr("Alice Updated")},
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:        "Unauthorized access (Other User)",
+			name:        "forbidden other user update",
 			userIDParam: uuid.New().String(),
 			authCtxUser: &middleware.User{
-				ID:   userUUID,
+				ID:   userID,
 				Role: database.UserRoleUser,
 			},
-			body: model.PatchUserProfileRequest{
-				Name: strPtr("Hacked Name"),
-			},
+			body:           model.PatchUserProfileRequest{UserName: strPtr("Hacked")},
 			expectedStatus: http.StatusForbidden,
 		},
 		{
-			name:        "Admin Can Update Anyone",
+			name:        "admin can update any user",
 			userIDParam: uuid.New().String(),
 			authCtxUser: &middleware.User{
-				ID:   userUUID,
+				ID:   userID,
 				Role: database.UserRoleAdmin,
 			},
-			body: model.PatchUserProfileRequest{
-				Name: strPtr("Admin Edit"),
-			},
+			body:           model.PatchUserProfileRequest{UserName: strPtr("Admin Edit")},
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "Unauthenticated Request",
-			userIDParam:    userUUID.String(),
+			name:           "unauthenticated",
+			userIDParam:    userID.String(),
 			authCtxUser:    nil,
-			body:           model.PatchUserProfileRequest{Name: strPtr("Sneaky")},
+			body:           model.PatchUserProfileRequest{UserName: strPtr("Sneaky")},
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
-			name:        "Invalid UUID Param",
+			name:        "invalid uuid param",
 			userIDParam: "not-a-uuid",
 			authCtxUser: &middleware.User{
-				ID:   userUUID,
+				ID:   userID,
 				Role: database.UserRoleUser,
 			},
-			body:           model.PatchUserProfileRequest{Name: strPtr("X")},
+			body:           model.PatchUserProfileRequest{UserName: strPtr("X")},
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:        "Invalid JSON Body",
-			userIDParam: userUUID.String(),
+			name:        "invalid json body",
+			userIDParam: userID.String(),
 			authCtxUser: &middleware.User{
-				ID:   userUUID,
+				ID:   userID,
 				Role: database.UserRoleUser,
 			},
 			body:           "{bad-json}",
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:        "Repo Error on Update",
-			userIDParam: userUUID.String(),
+			name:        "repo error on update",
+			userIDParam: userID.String(),
 			authCtxUser: &middleware.User{
-				ID:   userUUID,
+				ID:   userID,
 				Role: database.UserRoleUser,
 			},
-			body:           model.PatchUserProfileRequest{Name: strPtr("Fail")},
+			body:           model.PatchUserProfileRequest{UserName: strPtr("Fail")},
 			mockErr:        fmt.Errorf("db connection lost"),
 			expectedStatus: http.StatusInternalServerError,
 		},
@@ -505,11 +550,13 @@ func TestHandleUpdateUserProfile(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Seed mock for arbitrary updates if target is not userUUID
 			targetUUID, _ := uuid.Parse(tc.userIDParam)
-			if targetUUID != userUUID {
+			if targetUUID != userID && targetUUID != uuid.Nil {
 				repo.users[targetUUID] = database.User{
-					ID: targetUUID,
+					ID:     targetUUID,
+					Name:   "Other User",
+					Role:   database.UserRoleUser,
+					Status: database.AccountStatusApproved,
 				}
 			}
 
@@ -524,13 +571,11 @@ func TestHandleUpdateUserProfile(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodPatch, "/auth/users/"+tc.userIDParam, &buf)
 
-			// Add auth ctx only if authenticated
 			if tc.authCtxUser != nil {
 				ctx := middleware.WithUser(req.Context(), *tc.authCtxUser)
 				req = req.WithContext(ctx)
 			}
 
-			// Add chi URL parameter
 			rctx := chi.NewRouteContext()
 			rctx.URLParams.Add("id", tc.userIDParam)
 			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
@@ -551,27 +596,23 @@ func TestHandlePasswordChange(t *testing.T) {
 
 	pwd := "original_password"
 	hashed, _ := utlis.HashPassword(pwd)
-	userUUID := uuid.New()
-	userSeed := database.User{
-		ID:       userUUID,
-		Email:    "alice@example.com",
-		Password: hashed,
-	}
-	repo.users[userUUID] = userSeed
-	repo.emails[userSeed.Email] = userSeed
+	userID, userEmail := seedUser(repo, func(u *database.User) {
+		u.Password = hashed
+		u.Email = "alice@example.com"
+	})
 
 	tests := []struct {
-		name           string
-		authCtxUser    *middleware.User // nil means unauthenticated
-		body           any
+		name            string
+		authCtxUser     *middleware.User
+		body            any
 		mockPasswordErr error
-		expectedStatus int
+		expectedStatus  int
 	}{
 		{
-			name: "Success Password Change",
+			name: "successful password change",
 			authCtxUser: &middleware.User{
-				ID:    userUUID,
-				Email: "alice@example.com",
+				ID:    userID,
+				Email: userEmail,
 			},
 			body: model.PatchUserPassword{
 				OldPassword: pwd,
@@ -580,10 +621,10 @@ func TestHandlePasswordChange(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "Wrong Old Password",
+			name: "wrong old password",
 			authCtxUser: &middleware.User{
-				ID:    userUUID,
-				Email: "alice@example.com",
+				ID:    userID,
+				Email: userEmail,
 			},
 			body: model.PatchUserPassword{
 				OldPassword: "wrong_old_pwd",
@@ -592,37 +633,24 @@ func TestHandlePasswordChange(t *testing.T) {
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
-			name:           "Unauthenticated Request",
+			name:           "unauthenticated",
 			authCtxUser:    nil,
 			body:           model.PatchUserPassword{OldPassword: pwd, Password: "x"},
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
-			name: "Invalid JSON Body",
+			name: "invalid json body",
 			authCtxUser: &middleware.User{
-				ID:    userUUID,
-				Email: "alice@example.com",
+				ID:    userID,
+				Email: userEmail,
 			},
 			body:           "{not-json}",
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name: "Repo Save Failure",
+			name: "user email not found",
 			authCtxUser: &middleware.User{
-				ID:    userUUID,
-				Email: "alice@example.com",
-			},
-			body: model.PatchUserPassword{
-				OldPassword: pwd,
-				Password:    "new_password_456",
-			},
-			mockPasswordErr: fmt.Errorf("db write error"),
-			expectedStatus:  http.StatusInternalServerError,
-		},
-		{
-			name: "User Email Not Found in DB",
-			authCtxUser: &middleware.User{
-				ID:    userUUID,
+				ID:    userID,
 				Email: "ghost@example.com",
 			},
 			body: model.PatchUserPassword{
@@ -631,13 +659,27 @@ func TestHandlePasswordChange(t *testing.T) {
 			},
 			expectedStatus: http.StatusNotFound,
 		},
+		{
+			name: "repo save failure",
+			authCtxUser: &middleware.User{
+				ID:    userID,
+				Email: userEmail,
+			},
+			body: model.PatchUserPassword{
+				OldPassword: pwd,
+				Password:    "new_password_456",
+			},
+			mockPasswordErr: fmt.Errorf("db write error"),
+			expectedStatus:  http.StatusInternalServerError,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Re-seed to ensure consistent state after "Success" test mutates the password
-			repo.users[userUUID] = userSeed
-			repo.emails[userSeed.Email] = userSeed
+			user := repo.users[userID]
+			user.Password = hashed
+			repo.users[userID] = user
+			repo.emails[userEmail] = user
 			repo.passwordErr = tc.mockPasswordErr
 
 			var buf bytes.Buffer
@@ -658,6 +700,294 @@ func TestHandlePasswordChange(t *testing.T) {
 
 			if rr.Code != tc.expectedStatus {
 				t.Errorf("expected status %d, got %d: %s", tc.expectedStatus, rr.Code, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleGetUserById(t *testing.T) {
+	repo := newMockUserRepo()
+	h := &Handler{Repo: repo}
+
+	userID, _ := seedUser(repo, func(u *database.User) {
+		u.Name = "Visible User"
+		u.Email = "visible@example.com"
+	})
+
+	tests := []struct {
+		name           string
+		userIDParam    string
+		mockErr        error
+		expectedStatus int
+		expectSuccess  bool
+	}{
+		{
+			name:           "successful get user",
+			userIDParam:    userID.String(),
+			expectedStatus: http.StatusOK,
+			expectSuccess:  true,
+		},
+		{
+			name:           "invalid uuid",
+			userIDParam:    "not-a-uuid",
+			expectedStatus: http.StatusOK,
+			expectSuccess:  false,
+		},
+		{
+			name:           "user not found",
+			userIDParam:    uuid.New().String(),
+			expectedStatus: http.StatusOK,
+			expectSuccess:  false,
+		},
+		{
+			name:           "db error",
+			userIDParam:    userID.String(),
+			mockErr:        fmt.Errorf("connection refused"),
+			expectedStatus: http.StatusOK,
+			expectSuccess:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo.getErr = tc.mockErr
+
+			req := httptest.NewRequest(http.MethodGet, "/auth/users/"+tc.userIDParam, nil)
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("id", tc.userIDParam)
+			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+			rr := httptest.NewRecorder()
+
+			h.HandleGetUserById(rr, req)
+
+			if rr.Code != tc.expectedStatus {
+				t.Errorf("expected status %d, got %d: %s", tc.expectedStatus, rr.Code, rr.Body.String())
+			}
+
+			var env struct {
+				Success bool
+			}
+			json.Unmarshal(rr.Body.Bytes(), &env)
+			if env.Success != tc.expectSuccess {
+				t.Errorf("expected Success=%v, got %v", tc.expectSuccess, env.Success)
+			}
+		})
+	}
+}
+
+func TestHandleMe(t *testing.T) {
+	repo := newMockUserRepo()
+	h := &Handler{Repo: repo}
+
+	seedUser(repo)
+
+	tests := []struct {
+		name           string
+		setCookie      bool
+		cookieValue    string
+		expectedStatus int
+		expectSuccess  bool
+	}{
+		{
+			name:           "no cookie present",
+			setCookie:      false,
+			expectedStatus: http.StatusOK,
+			expectSuccess:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+			if tc.setCookie {
+				req.AddCookie(&http.Cookie{
+					Name:  "authToken",
+					Value: tc.cookieValue,
+				})
+			}
+			rr := httptest.NewRecorder()
+			h.HandleMe(rr, req)
+
+			if rr.Code != tc.expectedStatus {
+				t.Errorf("expected status %d, got %d: %s", tc.expectedStatus, rr.Code, rr.Body.String())
+			}
+			var env struct {
+				Success bool
+			}
+			json.Unmarshal(rr.Body.Bytes(), &env)
+			if env.Success != tc.expectSuccess {
+				t.Errorf("expected Success=%v, got %v", tc.expectSuccess, env.Success)
+			}
+		})
+	}
+}
+
+func TestHandleGetAllUser(t *testing.T) {
+	repo := newMockUserRepo()
+	h := &Handler{Repo: repo}
+
+	seedUser(repo)
+	seedUser(repo)
+
+	tests := []struct {
+		name           string
+		mockErr        error
+		expectedStatus int
+		expectSuccess  bool
+	}{
+		{
+			name:           "successful list all users",
+			expectedStatus: http.StatusOK,
+			expectSuccess:  true,
+		},
+		{
+			name:           "db error",
+			mockErr:        fmt.Errorf("db error"),
+			expectedStatus: http.StatusOK,
+			expectSuccess:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo.getAllErr = tc.mockErr
+
+			req := httptest.NewRequest(http.MethodGet, "/auth/users", nil)
+			rr := httptest.NewRecorder()
+			h.HandleGetAllUser(rr, req)
+
+			if rr.Code != tc.expectedStatus {
+				t.Errorf("expected status %d, got %d: %s", tc.expectedStatus, rr.Code, rr.Body.String())
+			}
+
+			var env struct {
+				Success bool
+			}
+			json.Unmarshal(rr.Body.Bytes(), &env)
+			if env.Success != tc.expectSuccess {
+				t.Errorf("expected Success=%v, got %v", tc.expectSuccess, env.Success)
+			}
+		})
+	}
+}
+
+func TestHandleGetApprovedUser(t *testing.T) {
+	repo := newMockUserRepo()
+	h := &Handler{Repo: repo}
+
+	seedUser(repo, func(u *database.User) {
+		u.Status = database.AccountStatusApproved
+	})
+	seedUser(repo, func(u *database.User) {
+		u.Status = database.AccountStatusPending
+	})
+
+	tests := []struct {
+		name           string
+		mockErr        error
+		expectedStatus int
+		expectSuccess  bool
+	}{
+		{
+			name:           "successful list approved users",
+			expectedStatus: http.StatusOK,
+			expectSuccess:  true,
+		},
+		{
+			name:           "db error",
+			mockErr:        fmt.Errorf("db error"),
+			expectedStatus: http.StatusOK,
+			expectSuccess:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo.getAllErr = tc.mockErr
+
+			req := httptest.NewRequest(http.MethodGet, "/auth/main-users", nil)
+			rr := httptest.NewRecorder()
+			h.HandleGetApprovedUser(rr, req)
+
+			if rr.Code != tc.expectedStatus {
+				t.Errorf("expected status %d, got %d: %s", tc.expectedStatus, rr.Code, rr.Body.String())
+			}
+
+			var env struct {
+				Success bool
+			}
+			json.Unmarshal(rr.Body.Bytes(), &env)
+			if env.Success != tc.expectSuccess {
+				t.Errorf("expected Success=%v, got %v", tc.expectSuccess, env.Success)
+			}
+		})
+	}
+}
+
+func TestHandleGetUserByUserName(t *testing.T) {
+	repo := newMockUserRepo()
+	h := &Handler{Repo: repo}
+
+	seedUser(repo, func(u *database.User) {
+		u.Username = sql.NullString{String: "coolartist", Valid: true}
+	})
+
+	tests := []struct {
+		name           string
+		usernameParam  string
+		mockErr        error
+		expectedStatus int
+		expectSuccess  bool
+	}{
+		{
+			name:           "successful get by username",
+			usernameParam:  "coolartist",
+			expectedStatus: http.StatusOK,
+			expectSuccess:  true,
+		},
+		{
+			name:           "username not found",
+			usernameParam:  "unknown",
+			expectedStatus: http.StatusOK,
+			expectSuccess:  false,
+		},
+		{
+			name:           "empty username param",
+			usernameParam:  "",
+			expectedStatus: http.StatusOK,
+			expectSuccess:  false,
+		},
+		{
+			name:           "db error",
+			usernameParam:  "coolartist",
+			mockErr:        fmt.Errorf("db error"),
+			expectedStatus: http.StatusOK,
+			expectSuccess:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo.getErr = tc.mockErr
+
+			req := httptest.NewRequest(http.MethodGet, "/auth/users/by-username/"+tc.usernameParam, nil)
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("user-name", tc.usernameParam)
+			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+			rr := httptest.NewRecorder()
+
+			h.HandleGetUserByUserName(rr, req)
+
+			if rr.Code != tc.expectedStatus {
+				t.Errorf("expected status %d, got %d: %s", tc.expectedStatus, rr.Code, rr.Body.String())
+			}
+
+			var env struct {
+				Success bool
+			}
+			json.Unmarshal(rr.Body.Bytes(), &env)
+			if env.Success != tc.expectSuccess {
+				t.Errorf("expected Success=%v, got %v", tc.expectSuccess, env.Success)
 			}
 		})
 	}

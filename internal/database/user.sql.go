@@ -9,17 +9,174 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
 )
+
+const checkUsrById = `-- name: CheckUsrById :one
+SELECT 
+    id,
+    status,
+    role
+FROM users
+WHERE id = $1
+`
+
+type CheckUsrByIdRow struct {
+	ID     uuid.UUID
+	Status AccountStatus
+	Role   UserRole
+}
+
+func (q *Queries) CheckUsrById(ctx context.Context, id uuid.UUID) (CheckUsrByIdRow, error) {
+	row := q.db.QueryRowContext(ctx, checkUsrById, id)
+	var i CheckUsrByIdRow
+	err := row.Scan(&i.ID, &i.Status, &i.Role)
+	return i, err
+}
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
     name,
     email,
     password,
+    batch
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    COALESCE($4, '')
+)
+RETURNING id
+`
+
+type CreateUserParams struct {
+	Name     string
+	Email    string
+	Password string
+	Batch    interface{}
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, createUser,
+		arg.Name,
+		arg.Email,
+		arg.Password,
+		arg.Batch,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getAllUser = `-- name: GetAllUser :many
+SELECT 
+    id,
+    name,
+    email,
+    status,
+    role,
+    image
+FROM users
+`
+
+type GetAllUserRow struct {
+	ID     uuid.UUID
+	Name   string
+	Email  string
+	Status AccountStatus
+	Role   UserRole
+	Image  sql.NullString
+}
+
+func (q *Queries) GetAllUser(ctx context.Context) ([]GetAllUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllUser)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllUserRow
+	for rows.Next() {
+		var i GetAllUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.Status,
+			&i.Role,
+			&i.Image,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllUserApproved = `-- name: GetAllUserApproved :many
+SELECT 
+    id,
+    name,
+    role,
+    description,
+    image,
+    social_links
+FROM users WHERE status='approved'
+`
+
+type GetAllUserApprovedRow struct {
+	ID          uuid.UUID
+	Name        string
+	Role        UserRole
+	Description sql.NullString
+	Image       sql.NullString
+	SocialLinks json.RawMessage
+}
+
+func (q *Queries) GetAllUserApproved(ctx context.Context) ([]GetAllUserApprovedRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllUserApproved)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllUserApprovedRow
+	for rows.Next() {
+		var i GetAllUserApprovedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Role,
+			&i.Description,
+			&i.Image,
+			&i.SocialLinks,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUser = `-- name: GetUser :one
+SELECT 
+    id,
+    name,
+    username,
+    email,
     batch,
     status,
     role,
@@ -27,99 +184,6 @@ INSERT INTO users (
     banner_image,
     description,
     social_links
-)
-VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
-    COALESCE($10::jsonb, '{}'::jsonb)
-)
-RETURNING 
-    id,
-    name,
-    email,
-    batch,
-    status,
-    role,
-    image,
-    banner_image,
-    description,
-    social_links,
-    created_at,
-    updated_at
-`
-
-type CreateUserParams struct {
-	Name        string
-	Email       string
-	Password    string
-	Batch       string
-	Status      AccountStatus
-	Role        UserRole
-	Image       sql.NullString
-	BannerImage sql.NullString
-	Description sql.NullString
-	Column10    json.RawMessage
-}
-
-type CreateUserRow struct {
-	ID          uuid.UUID
-	Name        string
-	Email       string
-	Batch       string
-	Status      AccountStatus
-	Role        UserRole
-	Image       sql.NullString
-	BannerImage sql.NullString
-	Description sql.NullString
-	SocialLinks json.RawMessage
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
-	row := q.db.QueryRowContext(ctx, createUser,
-		arg.Name,
-		arg.Email,
-		arg.Password,
-		arg.Batch,
-		arg.Status,
-		arg.Role,
-		arg.Image,
-		arg.BannerImage,
-		arg.Description,
-		arg.Column10,
-	)
-	var i CreateUserRow
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Email,
-		&i.Batch,
-		&i.Status,
-		&i.Role,
-		&i.Image,
-		&i.BannerImage,
-		&i.Description,
-		&i.SocialLinks,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getUser = `-- name: GetUser :one
-SELECT 
-    id,
-    name,
-    email,
-    batch,
-    status,
-    role,
-    image,
-    banner_image,
-    description,
-    social_links,
-    created_at,
-    updated_at
 FROM users
 WHERE id = $1
 `
@@ -127,16 +191,15 @@ WHERE id = $1
 type GetUserRow struct {
 	ID          uuid.UUID
 	Name        string
+	Username    sql.NullString
 	Email       string
-	Batch       string
+	Batch       sql.NullString
 	Status      AccountStatus
 	Role        UserRole
 	Image       sql.NullString
 	BannerImage sql.NullString
 	Description sql.NullString
 	SocialLinks json.RawMessage
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
 }
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (GetUserRow, error) {
@@ -145,6 +208,7 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (GetUserRow, error)
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.Username,
 		&i.Email,
 		&i.Batch,
 		&i.Status,
@@ -153,8 +217,6 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (GetUserRow, error)
 		&i.BannerImage,
 		&i.Description,
 		&i.SocialLinks,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -165,33 +227,17 @@ SELECT
     name,
     email,
     password,
-    batch,
-    status,
-    role,
-    image,
-    banner_image,
-    description,
-    social_links,
-    created_at,
-    updated_at
+    image
 FROM users
 WHERE email = $1
 `
 
 type GetUserByEmailRow struct {
-	ID          uuid.UUID
-	Name        string
-	Email       string
-	Password    string
-	Batch       string
-	Status      AccountStatus
-	Role        UserRole
-	Image       sql.NullString
-	BannerImage sql.NullString
-	Description sql.NullString
-	SocialLinks json.RawMessage
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID       uuid.UUID
+	Name     string
+	Email    string
+	Password string
+	Image    sql.NullString
 }
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
@@ -202,6 +248,50 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.Name,
 		&i.Email,
 		&i.Password,
+		&i.Image,
+	)
+	return i, err
+}
+
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECT 
+    id,
+    name,
+    username,
+    email,
+    batch,
+    status,
+    role,
+    image,
+    banner_image,
+    description,
+    social_links
+FROM users
+WHERE username = $1
+`
+
+type GetUserByUsernameRow struct {
+	ID          uuid.UUID
+	Name        string
+	Username    sql.NullString
+	Email       string
+	Batch       sql.NullString
+	Status      AccountStatus
+	Role        UserRole
+	Image       sql.NullString
+	BannerImage sql.NullString
+	Description sql.NullString
+	SocialLinks json.RawMessage
+}
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString) (GetUserByUsernameRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByUsername, username)
+	var i GetUserByUsernameRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Username,
+		&i.Email,
 		&i.Batch,
 		&i.Status,
 		&i.Role,
@@ -209,8 +299,6 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.BannerImage,
 		&i.Description,
 		&i.SocialLinks,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -218,152 +306,73 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 const patchUserAdmin = `-- name: PatchUserAdmin :one
 UPDATE users
 SET
-    status = COALESCE($2, status),
-    role = COALESCE($3, role),
+    status = COALESCE($1::account_status, status),
+    role = COALESCE($2::user_role, role),
     updated_at = NOW()
-WHERE id = $1
+WHERE id = $3
 RETURNING
     id,
-    name,
-    email,
-    batch,
     status,
-    role,
-    image,
-    banner_image,
-    description,
-    social_links,
-    created_at,
-    updated_at
+    role
 `
 
 type PatchUserAdminParams struct {
+	Status NullAccountStatus
+	Role   NullUserRole
+	ID     uuid.UUID
+}
+
+type PatchUserAdminRow struct {
 	ID     uuid.UUID
 	Status AccountStatus
 	Role   UserRole
 }
 
-type PatchUserAdminRow struct {
-	ID          uuid.UUID
-	Name        string
-	Email       string
-	Batch       string
-	Status      AccountStatus
-	Role        UserRole
-	Image       sql.NullString
-	BannerImage sql.NullString
-	Description sql.NullString
-	SocialLinks json.RawMessage
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
 func (q *Queries) PatchUserAdmin(ctx context.Context, arg PatchUserAdminParams) (PatchUserAdminRow, error) {
-	row := q.db.QueryRowContext(ctx, patchUserAdmin, arg.ID, arg.Status, arg.Role)
+	row := q.db.QueryRowContext(ctx, patchUserAdmin, arg.Status, arg.Role, arg.ID)
 	var i PatchUserAdminRow
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Email,
-		&i.Batch,
-		&i.Status,
-		&i.Role,
-		&i.Image,
-		&i.BannerImage,
-		&i.Description,
-		&i.SocialLinks,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const patchUserImages = `-- name: PatchUserImages :one
-UPDATE users
-SET
-    image = COALESCE($2, image),
-    banner_image = COALESCE($3, banner_image),
-    updated_at = NOW()
-WHERE id = $1
-RETURNING
-    id,
-    image,
-    banner_image,
-    description,
-    social_links,
-    updated_at
-`
-
-type PatchUserImagesParams struct {
-	ID          uuid.UUID
-	Image       sql.NullString
-	BannerImage sql.NullString
-}
-
-type PatchUserImagesRow struct {
-	ID          uuid.UUID
-	Image       sql.NullString
-	BannerImage sql.NullString
-	Description sql.NullString
-	SocialLinks json.RawMessage
-	UpdatedAt   time.Time
-}
-
-func (q *Queries) PatchUserImages(ctx context.Context, arg PatchUserImagesParams) (PatchUserImagesRow, error) {
-	row := q.db.QueryRowContext(ctx, patchUserImages, arg.ID, arg.Image, arg.BannerImage)
-	var i PatchUserImagesRow
-	err := row.Scan(
-		&i.ID,
-		&i.Image,
-		&i.BannerImage,
-		&i.Description,
-		&i.SocialLinks,
-		&i.UpdatedAt,
-	)
+	err := row.Scan(&i.ID, &i.Status, &i.Role)
 	return i, err
 }
 
 const patchUserPassword = `-- name: PatchUserPassword :one
 UPDATE users
 SET
-    password = $2,
+    password = $1,
     updated_at = NOW()
-WHERE id = $1
-RETURNING
-    id,
-    updated_at
+WHERE id = $2
+RETURNING id
 `
 
 type PatchUserPasswordParams struct {
-	ID       uuid.UUID
 	Password string
+	ID       uuid.UUID
 }
 
-type PatchUserPasswordRow struct {
-	ID        uuid.UUID
-	UpdatedAt time.Time
-}
-
-func (q *Queries) PatchUserPassword(ctx context.Context, arg PatchUserPasswordParams) (PatchUserPasswordRow, error) {
-	row := q.db.QueryRowContext(ctx, patchUserPassword, arg.ID, arg.Password)
-	var i PatchUserPasswordRow
-	err := row.Scan(&i.ID, &i.UpdatedAt)
-	return i, err
+func (q *Queries) PatchUserPassword(ctx context.Context, arg PatchUserPasswordParams) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, patchUserPassword, arg.Password, arg.ID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const patchUserProfile = `-- name: PatchUserProfile :one
 UPDATE users
 SET
     name = COALESCE($1::text, name),
-    email = COALESCE($2::text, email),
-    batch = COALESCE($3::text, batch),
-    description = COALESCE($4::text, description),
-    social_links = COALESCE($5::jsonb, social_links),
+    username = COALESCE($2::text, username),
+    email = COALESCE($3::text, email),
+    batch = COALESCE($4::text, batch),
+    description = COALESCE($5::text, description),
+    image = COALESCE($6::text, image),
+    banner_image = COALESCE($7::text, banner_image),
+    social_links = COALESCE($8::jsonb, social_links),
     updated_at = NOW()
-WHERE id = $6
+WHERE id = $9
 RETURNING
     id,
     name,
+    username,
     email,
     batch,
     status,
@@ -371,16 +380,17 @@ RETURNING
     image,
     banner_image,
     description,
-    social_links,
-    created_at,
-    updated_at
+    social_links
 `
 
 type PatchUserProfileParams struct {
 	Name        sql.NullString
+	Username    sql.NullString
 	Email       sql.NullString
 	Batch       sql.NullString
 	Description sql.NullString
+	Image       sql.NullString
+	BannerImage sql.NullString
 	SocialLinks pqtype.NullRawMessage
 	ID          uuid.UUID
 }
@@ -388,24 +398,26 @@ type PatchUserProfileParams struct {
 type PatchUserProfileRow struct {
 	ID          uuid.UUID
 	Name        string
+	Username    sql.NullString
 	Email       string
-	Batch       string
+	Batch       sql.NullString
 	Status      AccountStatus
 	Role        UserRole
 	Image       sql.NullString
 	BannerImage sql.NullString
 	Description sql.NullString
 	SocialLinks json.RawMessage
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
 }
 
 func (q *Queries) PatchUserProfile(ctx context.Context, arg PatchUserProfileParams) (PatchUserProfileRow, error) {
 	row := q.db.QueryRowContext(ctx, patchUserProfile,
 		arg.Name,
+		arg.Username,
 		arg.Email,
 		arg.Batch,
 		arg.Description,
+		arg.Image,
+		arg.BannerImage,
 		arg.SocialLinks,
 		arg.ID,
 	)
@@ -413,6 +425,7 @@ func (q *Queries) PatchUserProfile(ctx context.Context, arg PatchUserProfilePara
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.Username,
 		&i.Email,
 		&i.Batch,
 		&i.Status,
@@ -421,8 +434,6 @@ func (q *Queries) PatchUserProfile(ctx context.Context, arg PatchUserProfilePara
 		&i.BannerImage,
 		&i.Description,
 		&i.SocialLinks,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }

@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"net/http"
 
-	"github.com/Raj020994/handler"
-	"github.com/Raj020994/internal/database"
-	"github.com/Raj020994/utlis"
+	"github.com/Blue-Onion/ArtmeisterBackend/handler"
+	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
+	"github.com/Blue-Onion/ArtmeisterBackend/utlis"
 	"github.com/google/uuid"
 )
 
@@ -23,7 +23,8 @@ type User struct {
 	ID          uuid.UUID
 	Name        string
 	Email       string
-	Batch       string
+	UserName    sql.NullString
+	Batch       sql.NullString
 	Status      database.AccountStatus
 	Role        database.UserRole
 	Image       sql.NullString
@@ -59,7 +60,7 @@ func (h Handler) MiddlewareAuth(next http.Handler) http.HandlerFunc {
 			return
 		}
 
-		dbUser, err := h.Repo.GetUser(r.Context(), id)
+		usr, err := h.Repo.CheckUsrById(r.Context(), id)
 		if err != nil {
 			if utlis.IsNotFound(err) {
 				handler.RespondWithError(w, http.StatusUnauthorized, "Unauthorized: user not found")
@@ -69,17 +70,11 @@ func (h Handler) MiddlewareAuth(next http.Handler) http.HandlerFunc {
 			return
 		}
 
-		user := User{
-			ID:          dbUser.ID,
-			Name:        dbUser.Name,
-			Email:       dbUser.Email,
-			Batch:       dbUser.Batch,
-			Status:      dbUser.Status,
-			Role:        dbUser.Role,
-			Image:       dbUser.Image,
-			BannerImage: dbUser.BannerImage,
-		}
-		ctx := context.WithValue(r.Context(), userContextKey, user)
+		ctx := context.WithValue(r.Context(), userContextKey, User{
+			ID:     usr.ID,
+			Status: usr.Status,
+			Role:   usr.Role,
+		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

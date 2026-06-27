@@ -7,6 +7,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -31,7 +33,7 @@ INSERT INTO event_attendees (
 VALUES (
     $1, $2, $3
 )
-RETURNING id, event_id, user_id, joined_at
+RETURNING id
 `
 
 type EnrollUserToEventParams struct {
@@ -40,49 +42,70 @@ type EnrollUserToEventParams struct {
 	UserID  uuid.UUID
 }
 
-func (q *Queries) EnrollUserToEvent(ctx context.Context, arg EnrollUserToEventParams) (EventAttendee, error) {
+func (q *Queries) EnrollUserToEvent(ctx context.Context, arg EnrollUserToEventParams) (uuid.UUID, error) {
 	row := q.db.QueryRowContext(ctx, enrollUserToEvent, arg.ID, arg.EventID, arg.UserID)
-	var i EventAttendee
-	err := row.Scan(
-		&i.ID,
-		&i.EventID,
-		&i.UserID,
-		&i.JoinedAt,
-	)
-	return i, err
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getMyEventById = `-- name: GetMyEventById :one
+SELECT e.id
+FROM events e
+JOIN event_attendees ea ON ea.event_id = e.id
+WHERE ea.user_id = $1
+AND ea.event_id = $2
+LIMIT 1
+`
+
+type GetMyEventByIdParams struct {
+	UserID  uuid.UUID
+	EventID uuid.UUID
+}
+
+func (q *Queries) GetMyEventById(ctx context.Context, arg GetMyEventByIdParams) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, getMyEventById, arg.UserID, arg.EventID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const listEventAttendees = `-- name: ListEventAttendees :many
-SELECT u.id, u.name, u.password, u.email, u.description, u.banner_image, u.image, u.batch, u.social_links, u.status, u.role, u.created_at, u.updated_at
+SELECT 
+    u.id,
+    u.name,
+    u.username,
+    u.email,
+    u.image
 FROM users u
 JOIN event_attendees ea ON ea.user_id = u.id
 WHERE ea.event_id = $1
 ORDER BY ea.joined_at ASC
 `
 
-func (q *Queries) ListEventAttendees(ctx context.Context, eventID uuid.UUID) ([]User, error) {
+type ListEventAttendeesRow struct {
+	ID       uuid.UUID
+	Name     string
+	Username sql.NullString
+	Email    string
+	Image    sql.NullString
+}
+
+func (q *Queries) ListEventAttendees(ctx context.Context, eventID uuid.UUID) ([]ListEventAttendeesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listEventAttendees, eventID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []User
+	var items []ListEventAttendeesRow
 	for rows.Next() {
-		var i User
+		var i ListEventAttendeesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
-			&i.Password,
+			&i.Username,
 			&i.Email,
-			&i.Description,
-			&i.BannerImage,
 			&i.Image,
-			&i.Batch,
-			&i.SocialLinks,
-			&i.Status,
-			&i.Role,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -98,33 +121,44 @@ func (q *Queries) ListEventAttendees(ctx context.Context, eventID uuid.UUID) ([]
 }
 
 const listMyEvents = `-- name: ListMyEvents :many
-SELECT e.id, e.name, e.description, e.venue, e.image, e.banner_image, e.event_date, e.status, e.created_at, e.updated_at
+SELECT
+    e.id,
+    e.name,
+    e.description,
+    e.venue,
+    e.image,
+    e.event_date
 FROM events e
 JOIN event_attendees ea ON ea.event_id = e.id
 WHERE ea.user_id = $1
 ORDER BY e.event_date ASC
 `
 
-func (q *Queries) ListMyEvents(ctx context.Context, userID uuid.UUID) ([]Event, error) {
+type ListMyEventsRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description sql.NullString
+	Venue       sql.NullString
+	Image       sql.NullString
+	EventDate   time.Time
+}
+
+func (q *Queries) ListMyEvents(ctx context.Context, userID uuid.UUID) ([]ListMyEventsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listMyEvents, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Event
+	var items []ListMyEventsRow
 	for rows.Next() {
-		var i Event
+		var i ListMyEventsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.Description,
 			&i.Venue,
 			&i.Image,
-			&i.BannerImage,
 			&i.EventDate,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

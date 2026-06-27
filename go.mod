@@ -1,9 +1,8 @@
-module github.com/Raj020994
+module github.com/Blue-Onion/ArtmeisterBackend
 
 go 1.25.3
 
 require (
-	github.com/Blue-Onion/ArtmeisterBackend v0.0.0-20260521184403-9e188198840a
 	github.com/go-chi/chi v1.5.5
 	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v4 v4.5.2

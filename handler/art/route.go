@@ -3,26 +3,27 @@ package art
 import (
 	"net/http"
 
-	artmetadata "github.com/Raj020994/handler/artMetaData"
-	"github.com/Raj020994/middleware"
+	artmetadata "github.com/Blue-Onion/ArtmeisterBackend/handler/artMetaData"
+	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
 	"github.com/go-chi/chi"
-
 )
 
 // ArtRouter defines routes for the art package.
-func ArtRouter(artHandler *Handler, artMetadataHandler *artmetadata.Handler, middlewareHandler *middleware.Handler) *chi.Mux {
+func ArtRouter(artHandler *Handler, artMetadataHandler *artmetadata.Handler, middlewareHandler *middleware.Handler, profile *ProfileHandler) *chi.Mux {
 	r := chi.NewRouter()
 	auth := middlewareHandler.MiddlewareAuth
-
 	// Public routes
-	r.Get("/user/{user_id}", artHandler.HandleGetArts)
+	r.Get("/u/{user_id}", artHandler.HandleGetArts)
+	r.Get("/p/{user_id}/{id}", artHandler.HandleGetArtProfileById)
 	r.Get("/{id}", artHandler.HandleGetArtById)
+	r.Get("/pending-art", artHandler.HandleGetPendingArt)
 
+	r.Get("/u/profile/{id}", profile.HandlerGetArtistProfile)
 	// Art metadata public routes
 	r.Get("/{id}/comments", artMetadataHandler.HandleGetArtComments)
 	r.Get("/{id}/comments/count", artMetadataHandler.HandleGetArtCommentsCount)
 	r.Get("/{id}/likes/count", artMetadataHandler.HandleGetArtLikeCount)
-
+	r.Get("/", artHandler.HandleGetApprovedArt)
 	// Protected routes (require user authentication)
 	r.Post("/", auth(http.HandlerFunc(artHandler.HandleArtCreation)))
 	r.Delete("/{id}", auth(http.HandlerFunc(artHandler.HandleArtDeletion)))

@@ -232,17 +232,20 @@ type EventAttendee struct {
 }
 
 type User struct {
-	ID          uuid.UUID
-	Name        string
-	Password    string
-	Email       string
-	Description sql.NullString
-	BannerImage sql.NullString
-	Image       sql.NullString
-	Batch       string
-	SocialLinks json.RawMessage
-	Status      AccountStatus
-	Role        UserRole
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                uuid.UUID
+	Name              string
+	Username          sql.NullString
+	Password          string
+	Email             string
+	Description       sql.NullString
+	BannerImage       sql.NullString
+	Image             sql.NullString
+	Batch             sql.NullString
+	SocialLinks       json.RawMessage
+	Status            AccountStatus
+	Role              UserRole
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ResetToken        sql.NullString
+	ResetTokenExpires sql.NullTime
 }

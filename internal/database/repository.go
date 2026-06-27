@@ -2,28 +2,35 @@ package database
 
 import (
 	"context"
+	"database/sql"
+
 	"github.com/google/uuid"
 )
 
 type UserRepository interface {
-	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	GetUser(ctx context.Context, id uuid.UUID) (GetUserRow, error)
+	GetAllUser(ctx context.Context) ([]GetAllUserRow, error)
 	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
-	PatchUserImages(ctx context.Context, arg PatchUserImagesParams) (PatchUserImagesRow, error)
 	PatchUserProfile(ctx context.Context, arg PatchUserProfileParams) (PatchUserProfileRow, error)
 	PatchUserAdmin(ctx context.Context, arg PatchUserAdminParams) (PatchUserAdminRow, error)
-	PatchUserPassword(ctx context.Context, arg PatchUserPasswordParams) (PatchUserPasswordRow, error)
+	GetUserByUsername(ctx context.Context, username sql.NullString) (GetUserByUsernameRow, error)
+	GetAllUserApproved(ctx context.Context) ([]GetAllUserApprovedRow, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (uuid.UUID, error)
+	PatchUserPassword(ctx context.Context, arg PatchUserPasswordParams) (uuid.UUID, error)
+	CheckUsrById(ctx context.Context, id uuid.UUID) (CheckUsrByIdRow, error)
 }
 type ArtRepository interface {
 	DeleteArt(ctx context.Context, arg DeleteArtParams) (uuid.UUID, error)
-	GetArtByID(ctx context.Context, id uuid.UUID) (Art, error)
-	GetArtByUser(ctx context.Context, userID uuid.UUID) ([]Art, error)
-	ListArt(ctx context.Context) ([]Art, error)
-	ListArtByTag(ctx context.Context, tags []string) ([]Art, error)
-	ListArtByTags(ctx context.Context, dollar_1 []string) ([]Art, error)
-	UpdateArt(ctx context.Context, arg UpdateArtParams) (Art, error)
-	UpdateArtStatus(ctx context.Context, arg UpdateArtStatusParams) (Art, error)
-	CreateArt(ctx context.Context, arg CreateArtParams) (Art, error)
+	GetArtByUser(ctx context.Context, userID uuid.UUID) ([]GetArtByUserRow, error)
+	GetArtProfileByID(ctx context.Context, arg GetArtProfileByIDParams) (GetArtProfileByIDRow, error)
+	GetArtByID(ctx context.Context, id uuid.UUID) (GetArtByIDRow, error)
+	ListArt(ctx context.Context) ([]ListArtRow, error)
+	ListPendingArt(ctx context.Context) ([]ListPendingArtRow, error)
+	ListArtByTag(ctx context.Context, tags []string) ([]ListArtByTagRow, error)
+	ListArtByTags(ctx context.Context, dollar_1 []string) ([]ListArtByTagsRow, error)
+	UpdateArt(ctx context.Context, arg UpdateArtParams) (uuid.UUID, error)
+	UpdateArtStatus(ctx context.Context, arg UpdateArtStatusParams) (UpdateArtStatusRow, error)
+	CreateArt(ctx context.Context, arg CreateArtParams) (uuid.UUID, error)
 }
 type ArtMetaDataRepository interface {
 	AddArtComment(ctx context.Context, arg AddArtCommentParams) (ArtComment, error)
@@ -36,18 +43,19 @@ type ArtMetaDataRepository interface {
 	UnlikeArt(ctx context.Context, arg UnlikeArtParams) (uuid.UUID, error)
 }
 type EventRepository interface {
-	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
+	CreateEvent(ctx context.Context, arg CreateEventParams) (uuid.UUID, error)
 	DeleteEvent(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
-	GetEventByID(ctx context.Context, id uuid.UUID) (Event, error)
-	ListEvents(ctx context.Context) ([]Event, error)
-	ListEventsByMode(ctx context.Context, status ModeOfConduct) ([]Event, error)
-	ListUpcomingEvents(ctx context.Context) ([]Event, error)
-	UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event, error)
+	GetEventByID(ctx context.Context, id uuid.UUID) (GetEventByIDRow, error)
+	ListEvents(ctx context.Context) ([]ListEventsRow, error)
+	ListEventsByMode(ctx context.Context, status ModeOfConduct) ([]ListEventsByModeRow, error)
+	ListUpcomingEvents(ctx context.Context) ([]ListUpcomingEventsRow, error)
+	UpdateEvent(ctx context.Context, arg UpdateEventParams) (uuid.UUID, error)
 }
 type EventAttendeesRepository interface {
+	GetMyEventById(ctx context.Context, arg GetMyEventByIdParams) (uuid.UUID, error)
 	CountEventAttendees(ctx context.Context, eventID uuid.UUID) (int32, error)
-	EnrollUserToEvent(ctx context.Context, arg EnrollUserToEventParams) (EventAttendee, error)
-	ListEventAttendees(ctx context.Context, eventID uuid.UUID) ([]User, error)
-	ListMyEvents(ctx context.Context, userID uuid.UUID) ([]Event, error)
+	EnrollUserToEvent(ctx context.Context, arg EnrollUserToEventParams) (uuid.UUID, error)
+	ListEventAttendees(ctx context.Context, eventID uuid.UUID) ([]ListEventAttendeesRow, error)
+	ListMyEvents(ctx context.Context, userID uuid.UUID) ([]ListMyEventsRow, error)
 	RemoveUserFromEvent(ctx context.Context, arg RemoveUserFromEventParams) (uuid.UUID, error)
 }

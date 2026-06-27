@@ -3,6 +3,23 @@ INSERT INTO users (
     name,
     email,
     password,
+    batch
+)
+VALUES (
+    sqlc.arg('name'),
+    sqlc.arg('email'),
+    sqlc.arg('password'),
+    COALESCE(sqlc.narg('batch'), '')
+)
+RETURNING id;
+
+
+-- name: GetUser :one
+SELECT 
+    id,
+    name,
+    username,
+    email,
     batch,
     status,
     role,
@@ -10,41 +27,28 @@ INSERT INTO users (
     banner_image,
     description,
     social_links
-)
-VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
-    COALESCE($10::jsonb, '{}'::jsonb)
-)
-RETURNING 
-    id,
-    name,
-    email,
-    batch,
-    status,
-    role,
-    image,
-    banner_image,
-    description,
-    social_links,
-    created_at,
-    updated_at;
+FROM users
+WHERE id = $1;
 
--- name: GetUser :one
+
+-- name: GetAllUser :many
 SELECT 
     id,
     name,
     email,
-    batch,
     status,
     role,
-    image,
-    banner_image,
+    image
+FROM users;
+-- name: GetAllUserApproved :many
+SELECT 
+    id,
+    name,
+    role,
     description,
-    social_links,
-    created_at,
-    updated_at
-FROM users
-WHERE id = $1;
+    image,
+    social_links
+FROM users WHERE status='approved';
 
 
 -- name: GetUserByEmail :one
@@ -53,32 +57,45 @@ SELECT
     name,
     email,
     password,
+    image
+FROM users
+WHERE email = $1;
+
+
+-- name: GetUserByUsername :one
+SELECT 
+    id,
+    name,
+    username,
+    email,
     batch,
     status,
     role,
     image,
     banner_image,
     description,
-    social_links,
-    created_at,
-    updated_at
+    social_links
 FROM users
-WHERE email = $1;
+WHERE username = $1;
 
 
 -- name: PatchUserProfile :one
 UPDATE users
 SET
     name = COALESCE(sqlc.narg('name')::text, name),
+    username = COALESCE(sqlc.narg('username')::text, username),
     email = COALESCE(sqlc.narg('email')::text, email),
     batch = COALESCE(sqlc.narg('batch')::text, batch),
     description = COALESCE(sqlc.narg('description')::text, description),
+    image = COALESCE(sqlc.narg('image')::text, image),
+    banner_image = COALESCE(sqlc.narg('banner_image')::text, banner_image),
     social_links = COALESCE(sqlc.narg('social_links')::jsonb, social_links),
     updated_at = NOW()
 WHERE id = sqlc.arg('id')
 RETURNING
     id,
     name,
+    username,
     email,
     batch,
     status,
@@ -86,55 +103,38 @@ RETURNING
     image,
     banner_image,
     description,
-    social_links,
-    created_at,
-    updated_at;
+    social_links;
 
-
--- name: PatchUserAdmin :one
-UPDATE users
-SET
-    status = COALESCE($2, status),
-    role = COALESCE($3, role),
-    updated_at = NOW()
-WHERE id = $1
-RETURNING
-    id,
-    name,
-    email,
-    batch,
-    status,
-    role,
-    image,
-    banner_image,
-    description,
-    social_links,
-    created_at,
-    updated_at;
 
 
 -- name: PatchUserPassword :one
 UPDATE users
 SET
-    password = $2,
+    password = sqlc.arg('password'),
     updated_at = NOW()
-WHERE id = $1
-RETURNING
-    id,
-    updated_at;
+WHERE id = sqlc.arg('id')
+RETURNING id;
 
 
--- name: PatchUserImages :one
+
+
+-- name: PatchUserAdmin :one
 UPDATE users
 SET
-    image = COALESCE($2, image),
-    banner_image = COALESCE($3, banner_image),
+    status = COALESCE(sqlc.narg('status')::account_status, status),
+    role = COALESCE(sqlc.narg('role')::user_role, role),
     updated_at = NOW()
-WHERE id = $1
+WHERE id = sqlc.arg('id')
 RETURNING
     id,
-    image,
-    banner_image,
-    description,
-    social_links,
-    updated_at;
+    status,
+    role;
+
+
+-- name: CheckUsrById :one
+SELECT 
+    id,
+    status,
+    role
+FROM users
+WHERE id = $1;

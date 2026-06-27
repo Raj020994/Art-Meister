@@ -5,7 +5,7 @@ INSERT INTO event_attendees (
 VALUES (
     $1, $2, $3
 )
-RETURNING *;
+RETURNING id;
 
 
 -- name: RemoveUserFromEvent :one
@@ -15,12 +15,16 @@ RETURNING event_id;
 
 
 -- name: ListEventAttendees :many
-SELECT u.*
+SELECT 
+    u.id,
+    u.name,
+    u.username,
+    u.email,
+    u.image
 FROM users u
 JOIN event_attendees ea ON ea.user_id = u.id
 WHERE ea.event_id = $1
 ORDER BY ea.joined_at ASC;
-
 
 -- name: CountEventAttendees :one
 SELECT COUNT(*)::int
@@ -29,8 +33,22 @@ WHERE event_id = $1;
 
 
 -- name: ListMyEvents :many
-SELECT e.*
+SELECT
+    e.id,
+    e.name,
+    e.description,
+    e.venue,
+    e.image,
+    e.event_date
 FROM events e
 JOIN event_attendees ea ON ea.event_id = e.id
 WHERE ea.user_id = $1
 ORDER BY e.event_date ASC;
+
+-- name: GetMyEventById :one
+SELECT e.id
+FROM events e
+JOIN event_attendees ea ON ea.event_id = e.id
+WHERE ea.user_id = $1
+AND ea.event_id = $2
+LIMIT 1;

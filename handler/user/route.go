@@ -3,7 +3,7 @@ package user
 import (
 	"net/http"
 
-	"github.com/Raj020994/middleware"
+	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
 	"github.com/go-chi/chi"
 )
 
@@ -16,10 +16,15 @@ func UserRouter(userHandler *Handler, middlewareHandler *middleware.Handler) *ch
 
 	// Protected routes
 	auth := middlewareHandler.MiddlewareAuth
-	r.Patch("/users/avatar", auth(http.HandlerFunc(userHandler.HandleImageChange)))
+	admin := middlewareHandler.MiddlewareAdminAuth
+
+	r.Get("/main-users", http.HandlerFunc(userHandler.HandleGetApprovedUser))
+	r.Get("/users", admin(http.HandlerFunc(userHandler.HandleGetAllUser)))
 	r.Patch("/users/{id}", auth(http.HandlerFunc(userHandler.HandleUpdateUserProfile)))
+	r.Get("/users/{id}", userHandler.HandleGetUserById)
 	r.Patch("/users/password", auth(http.HandlerFunc(userHandler.HandlePasswordChange)))
 	r.Post("/logout", auth(http.HandlerFunc(userHandler.HandleLogOut)))
+	r.Get("/me", http.HandlerFunc(userHandler.HandleMe))
 
 	return r
 }

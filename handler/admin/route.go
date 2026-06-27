@@ -1,9 +1,9 @@
 package admin
 
 import (
-	"github.com/Raj020994/handler/art"
-	"github.com/Raj020994/handler/user"
-	"github.com/Raj020994/middleware"
+	"github.com/Blue-Onion/ArtmeisterBackend/handler/art"
+	"github.com/Blue-Onion/ArtmeisterBackend/handler/user"
+	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
 	"github.com/go-chi/chi"
 	"net/http"
 )
@@ -18,8 +18,8 @@ func AdminRoute(userHandler *user.Handler, artHandler *art.Handler, middlewareHa
 	adminUserHandler := &UserHandler{Repo: userHandler.Repo}
 	adminArtHandler := &ArtHandler{Repo: artHandler.Repo}
 
-	r.Patch("/users/{id}/status", adminUserHandler.HandlerUserStatus)
 	r.Patch("/arts/{art_id}/status", adminArtHandler.HandlerArtStatus)
+	r.Patch("/users/{user_id}/status", adminUserHandler.HandlerRole)
 
 	return r
 }

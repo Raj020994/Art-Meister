@@ -31,6 +31,26 @@ func RespondWithJson(w http.ResponseWriter, code int, payload any) {
 	w.Write(data)
 
 }
+
+func RespondWithJsonCustom(w http.ResponseWriter, code int, success bool, payload any) {
+	type customRes struct {
+		Success bool
+		Data    any
+	}
+	res := customRes{
+		Success: success,
+		Data:    payload,
+	}
+	data, err := json.Marshal(res)
+	if err != nil {
+		log.Println("Failed to parse Json")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Add("Content-type", "Application/Json")
+	w.WriteHeader(code)
+	w.Write(data)
+}
 func RespondWithError(w http.ResponseWriter, code int, msg string) {
 	if code > 499 {
 		log.Println("Responding with 5xx error", msg)

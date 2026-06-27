@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/Raj020994/handler"
-	"github.com/Raj020994/internal/database"
-	"github.com/Raj020994/utlis"
+	"github.com/Blue-Onion/ArtmeisterBackend/handler"
+	"github.com/Blue-Onion/ArtmeisterBackend/internal/database"
+	"github.com/Blue-Onion/ArtmeisterBackend/utlis"
 	"github.com/google/uuid"
 )
 
@@ -41,7 +41,7 @@ func (h Handler) MiddlewareAdminAuth(next http.Handler) http.HandlerFunc {
 			return
 		}
 
-		dbUser, err := h.Repo.GetUser(r.Context(), id)
+		user, err := h.Repo.CheckUsrById(r.Context(), id)
 		if err != nil {
 			if utlis.IsNotFound(err) {
 				handler.RespondWithError(w, http.StatusUnauthorized, "Unauthorized: user not found")
@@ -50,19 +50,13 @@ func (h Handler) MiddlewareAdminAuth(next http.Handler) http.HandlerFunc {
 			handler.RespondWithError(w, http.StatusInternalServerError, "Internal Server Error")
 			return
 		}
-		if dbUser.Role != database.UserRoleAdmin {
+		if user.Role != database.UserRoleAdmin {
 			handler.RespondWithError(w, http.StatusUnauthorized, "Unauthorized:Admin not Found")
 			return
 		}
-		user := User{
-			ID:          dbUser.ID,
-			Name:        dbUser.Name,
-			Email:       dbUser.Email,
-			Batch:       dbUser.Batch,
-			Status:      dbUser.Status,
-			Role:        dbUser.Role,
-			Image:       dbUser.Image,
-			BannerImage: dbUser.BannerImage,
+		if user.Status != database.AccountStatusApproved {
+			handler.RespondWithError(w, http.StatusUnauthorized, "You are Banned to do anything")
+			return
 		}
 		ctx := context.WithValue(r.Context(), admin, user)
 		next.ServeHTTP(w, r.WithContext(ctx))

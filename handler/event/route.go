@@ -3,7 +3,7 @@ package event
 import (
 	"net/http"
 
-	"github.com/Raj020994/middleware"
+	"github.com/Blue-Onion/ArtmeisterBackend/middleware"
 	"github.com/go-chi/chi"
 )
 
@@ -19,7 +19,9 @@ func EventRouter(eventHandler *EventHandler, attendeeHandler *EventAttendeeHandl
 
 	// Protected routes (require user authentication)
 	r.Post("/{id}/join", auth(http.HandlerFunc(attendeeHandler.HandleJoinEvent)))
-	r.Delete("/{id}/attendee", auth(http.HandlerFunc(attendeeHandler.HandleDeleteEventAttendee)))
+	r.Get("/u/{id}", auth(http.HandlerFunc(attendeeHandler.HandleGetMyEvent)))
+	r.Get("/all", auth(http.HandlerFunc(attendeeHandler.HandleGetMyAllEvent)))
+	r.Delete("/{id}/attendee/{user_id}", auth(http.HandlerFunc(attendeeHandler.HandleDeleteEventAttendee)))
 	r.Get("/{id}/attendees", auth(http.HandlerFunc(attendeeHandler.HandleAllEventAttendee)))
 
 	// Admin-only routes (require admin authentication)
